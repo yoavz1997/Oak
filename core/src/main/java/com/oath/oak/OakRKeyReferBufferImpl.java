@@ -98,7 +98,8 @@ public class OakRKeyReferBufferImpl implements OakRBuffer {
 
     @Override
     public void unsafeCopyBufferToIntArray(int srcPosition, int[] dstArray, int countInts) {
-        UnsafeUtils.unsafeCopyBufferToIntArray(getTemporalPerThreadByteBuffer(), srcPosition+keyPosition, dstArray, countInts);
+      //  UnsafeUtils.unsafeCopyBufferToIntArray(getTemporalPerThreadByteBuffer(), srcPosition+keyPosition, dstArray, countInts);
+      System.arraycopy(getTemporalPerThreadByteBuffer(), srcPosition+keyPosition, dstArray, 0, countInts);
     }
 
     private ByteBuffer getTemporalPerThreadByteBuffer() {
