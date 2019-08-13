@@ -970,6 +970,28 @@ class InternalOakMap<K, V> {
             return new AbstractMap.SimpleImmutableEntry<>(bb, currentHandle);
         }
 
+        /**
+         * Advances next to higher entry without creating a ByteBuffer for key.
+         * Return previous index
+         */
+        Handle linearAdvance(OakRKeyReferBufferImpl key) {
+
+            if (state == null) {
+                throw new NoSuchElementException();
+            }
+
+            Chunk.State chunkState = state.getChunk().state();
+
+            if (chunkState == Chunk.State.RELEASED) {
+                initAfterRebalance();
+            }
+
+            state.getChunk().setKeyRefer(state.getIndex(),key);
+            Handle currentHandle = state.getChunk().getHandle(state.getIndex());
+            advanceState();
+            return currentHandle;
+        }
+
         private void initState(boolean isDescending, K lowerBound, boolean lowerInclusive,
                                K upperBound, boolean upperInclusive) {
 
@@ -1105,6 +1127,25 @@ class InternalOakMap<K, V> {
         }
     }
 
+    class EntryLinearIterator extends Iter<Map.Entry<OakRBuffer, OakRBuffer>> {
+
+        private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
+        private OakRValueBufferImpl value = new OakRValueBufferImpl(null);
+
+        EntryLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+            super(lo, loInclusive, hi, hiInclusive, isDescending);
+        }
+
+        public Map.Entry<OakRBuffer, OakRBuffer> next() {
+            Handle h = linearAdvance(key);
+            if (h == null) {
+                return null;
+            }
+            value.setHandle(h);
+            return new AbstractMap.SimpleImmutableEntry<>(key, value);
+        }
+    }
+
     class EntryTransformIterator<T> extends Iter<T> {
 
         final Function<Map.Entry<ByteBuffer, ByteBuffer>, T> transformer;
@@ -1177,7 +1218,8 @@ class InternalOakMap<K, V> {
     }
 
     Iterator<Map.Entry<OakRBuffer, OakRBuffer>> entriesBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
-        return new EntryIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+      //  return new EntryIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+      return new EntryLinearIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
     Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {

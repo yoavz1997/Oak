@@ -208,6 +208,27 @@ public class Chunk<K, V> {
     }
 
     /**
+     * Sets the given key reference (OakRKeyReferBufferImpl) given the entry index.
+     * There is no copy just a special ByteBuffer for a single key.
+     * The thread-local ByteBuffer can be reused by different threads, however as long as
+     * a thread is invoked the ByteBuffer is related solely to this thread.
+     */
+    void setKeyRefer(int entryIndex, OakRKeyReferBufferImpl keyReferBuffer) {
+        if (entryIndex == Chunk.NONE) {
+            return;
+        }
+
+        int blockID = getEntryField(entryIndex, OFFSET_KEY_BLOCK);
+        int keyPosition = getEntryField(entryIndex, OFFSET_KEY_POSITION);
+        int length = getEntryField(entryIndex, OFFSET_KEY_LENGTH);
+
+        keyReferBuffer.setBlockID(blockID);
+        keyReferBuffer.setKeyPosition(keyPosition);
+        keyReferBuffer.setKeyLength(length);
+        return;
+    }
+
+    /**
      * release key in slice, currently not in use, waiting for GC to be arranged
      **/
     void releaseKey(int entryIndex) {
