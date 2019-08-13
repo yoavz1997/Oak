@@ -1142,6 +1142,7 @@ class InternalOakMap<K, V> {
                 return null;
             }
             value.setHandle(h);
+
             return new AbstractMap.SimpleImmutableEntry<>(key, value);
         }
     }
@@ -1194,6 +1195,22 @@ class InternalOakMap<K, V> {
         }
     }
 
+    class KeyLinearIterator extends Iter<OakRBuffer> {
+
+        private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
+
+        KeyLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+            super(lo, loInclusive, hi, hiInclusive, isDescending);
+        }
+
+        @Override
+        public OakRBuffer next() {
+            Handle h = linearAdvance(key);
+            return key;
+
+        }
+    }
+
     class KeyTransformIterator<T> extends Iter<T> {
 
         final Function<ByteBuffer, T> transformer;
@@ -1223,7 +1240,8 @@ class InternalOakMap<K, V> {
     }
 
     Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
-        return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+      //  return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        return new KeyLinearIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
     <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<ByteBuffer, T> transformer) {
