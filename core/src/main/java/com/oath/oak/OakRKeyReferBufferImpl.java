@@ -17,6 +17,8 @@ public class OakRKeyReferBufferImpl implements OakRBuffer {
     private int keyLength = 0;
     private final MemoryManager memoryManager;
 
+    private ByteBuffer bb = null;
+
     // The OakRKeyReferBufferImpl user accesses OakRKeyReferBufferImpl
     // as it would be a ByteBuffer with initially zero position.
     // We translate it to the relevant ByteBuffer position, by adding keyPosition to any given index
@@ -104,7 +106,9 @@ public class OakRKeyReferBufferImpl implements OakRBuffer {
 
     private ByteBuffer getTemporalPerThreadByteBuffer() {
         // TODO: how to check that the entire Oak wasn't already closed with its memoryManager
-        ByteBuffer bb = memoryManager.getByteBufferFromBlockID(blockID, keyPosition,keyLength);
+        if (bb == null) {
+            bb = memoryManager.getByteBufferFromBlockID(blockID, keyPosition, keyLength);
+        }
         return bb;
     }
 }
