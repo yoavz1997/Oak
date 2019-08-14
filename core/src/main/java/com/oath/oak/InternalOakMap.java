@@ -992,6 +992,26 @@ class InternalOakMap<K, V> {
             return currentHandle;
         }
 
+        /**
+         * Advances next to higher key without creating a ByteBuffer for key.
+         * Do not get and return handle/value
+         */
+        void linearAdvanceKeyOnly(OakRKeyReferBufferImpl key) {
+
+            if (state == null) {
+                throw new NoSuchElementException();
+            }
+
+            Chunk.State chunkState = state.getChunk().state();
+
+            if (chunkState == Chunk.State.RELEASED) {
+                initAfterRebalance();
+            }
+
+            state.getChunk().setKeyRefer(state.getIndex(),key);
+            advanceState();
+        }
+
         private void initState(boolean isDescending, K lowerBound, boolean lowerInclusive,
                                K upperBound, boolean upperInclusive) {
 
@@ -1197,7 +1217,7 @@ class InternalOakMap<K, V> {
 
     class KeyLinearIterator extends Iter<OakRBuffer> {
 
-      //  private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
+        private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
 
         KeyLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
             super(lo, loInclusive, hi, hiInclusive, isDescending);
@@ -1205,10 +1225,8 @@ class InternalOakMap<K, V> {
 
         @Override
         public OakRBuffer next() {
-            Map.Entry<ByteBuffer, Handle> pair = advance();
-            return new OakRKeyBufferImpl(pair.getKey());
-//            Handle h = linearAdvance(key);
-//            return key;
+            linearAdvanceKeyOnly(key);
+            return key;
         }
     }
 
