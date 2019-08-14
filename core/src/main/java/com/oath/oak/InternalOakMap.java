@@ -1149,7 +1149,7 @@ class InternalOakMap<K, V> {
 
     class EntryLinearIterator extends Iter<Map.Entry<OakRBuffer, OakRBuffer>> {
 
-        private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
+        private OakRKeyBufferImpl key = new OakRKeyBufferImpl(null);
         private OakRValueBufferImpl value = new OakRValueBufferImpl(null);
 
         EntryLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
@@ -1157,13 +1157,13 @@ class InternalOakMap<K, V> {
         }
 
         public Map.Entry<OakRBuffer, OakRBuffer> next() {
-            Handle h = linearAdvance(key);
-            if (h == null) {
+            Map.Entry<ByteBuffer, Handle> pair = advance();
+            if (pair.getValue() == null) {
                 return null;
             }
-            value.setHandle(h);
-
-            return new AbstractMap.SimpleImmutableEntry<>(key, null);
+            key.setByteBuffer(pair.getKey());
+            value.setHandle(pair.getValue());
+            return new AbstractMap.SimpleImmutableEntry<>(key, value);
         }
     }
 
