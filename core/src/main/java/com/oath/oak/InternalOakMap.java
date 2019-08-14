@@ -1205,9 +1205,10 @@ class InternalOakMap<K, V> {
 
         @Override
         public OakRBuffer next() {
-            Handle h = linearAdvance(key);
-            return key;
-
+            Map.Entry<ByteBuffer, Handle> pair = advance();
+            return new OakRKeyBufferImpl(pair.getKey());
+//            Handle h = linearAdvance(key);
+//            return key;
         }
     }
 
