@@ -7,7 +7,7 @@ import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
 import java.util.function.Function;
 
-public class ValueHeaderUtils {
+public class ValueUtils {
 
     private static final int LOCK_MASK = 0x3;
     private static final int READERS_SHIFT = 2;
@@ -81,14 +81,4 @@ public class ValueHeaderUtils {
 
     /* Handle Methods */
 
-    public <T> T transform(Function<ByteBuffer, T> transformer) {
-        readLock.lock();
-        if (isDeleted()) {
-            readLock.unlock();
-            return null;
-        }
-        T transformation = transformer.apply(getSlicedReadOnlyByteBuffer());
-        readLock.unlock();
-        return transformation;
-    }
 }
