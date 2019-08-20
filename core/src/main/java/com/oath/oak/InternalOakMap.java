@@ -1087,13 +1087,13 @@ class InternalOakMap<K, V> {
             int nextIndex = chunkIter.next();
             state.set(chunk, chunkIter, nextIndex);
 
-            if (hi != null) {
-                ByteBuffer key = state.getChunk().readKey(state.getIndex());
-                if (!inBounds(key)) {
-                    state = null;
-                    return;
-                }
-            }
+//            if (hi != null) {
+//                ByteBuffer key = state.getChunk().readKey(state.getIndex());
+//                if (!inBounds(key)) {
+//                    state = null;
+//                    return;
+//                }
+//            }
         }
     }
 
