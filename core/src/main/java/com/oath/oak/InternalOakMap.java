@@ -1087,10 +1087,12 @@ class InternalOakMap<K, V> {
             int nextIndex = chunkIter.next();
             state.set(chunk, chunkIter, nextIndex);
 
-            ByteBuffer key = state.getChunk().readKey(state.getIndex());
-            if (!inBounds(key)) {
-                state = null;
-                return;
+            if (hi != null) {
+                ByteBuffer key = state.getChunk().readKey(state.getIndex());
+                if (!inBounds(key)) {
+                    state = null;
+                    return;
+                }
             }
         }
     }
@@ -1259,8 +1261,8 @@ class InternalOakMap<K, V> {
     }
 
     Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
-        return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
-       // return new KeyLinearIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        //return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        return new KeyLinearIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
     <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<ByteBuffer, T> transformer) {
