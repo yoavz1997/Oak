@@ -1257,12 +1257,12 @@ class InternalOakMap<K, V> {
         }
     }
 
-    class KeyLinearIterator extends Iter<OakRBuffer> {
+    public class KeyLinearIterator extends Iter<OakRBuffer> {
 
         private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
 
         KeyLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
-            super(lo, loInclusive, hi, hiInclusive, isDescending);
+            super(null, loInclusive, null, hiInclusive, isDescending);
         }
 
         @Override
