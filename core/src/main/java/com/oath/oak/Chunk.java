@@ -916,7 +916,8 @@ public class Chunk<K, V> {
         @Override
         public int next() {
             int toReturn = next;
-            advance();
+            //advance();
+            next = getEntryField(next, OFFSET_NEXT);
             return toReturn;
         }
     }
