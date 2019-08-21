@@ -970,6 +970,29 @@ class InternalOakMap<K, V> {
             return new AbstractMap.SimpleImmutableEntry<>(bb, currentHandle);
         }
 
+
+        /**
+         * Advances next to higher entry.
+         * Return previous index
+         */
+        ByteBuffer advanceKeyOnly() {
+
+            if (state == null) {
+                throw new NoSuchElementException();
+            }
+
+            Chunk.State chunkState = state.getChunk().state();
+
+            if (chunkState == Chunk.State.RELEASED) {
+                initAfterRebalance();
+            }
+
+            ByteBuffer bb = state.getChunk().readKey(state.getIndex()).slice();
+            advanceState();
+            return bb;
+        }
+
+
         /**
          * Advances next to higher entry without creating a ByteBuffer for key.
          * Return previous index
@@ -1217,6 +1240,23 @@ class InternalOakMap<K, V> {
         }
     }
 
+    class KeyReuseIterator extends Iter<OakRBuffer> {
+
+        private OakRKeyBufferImpl key = new OakRKeyBufferImpl(null);
+
+        KeyReuseIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+            super(lo, loInclusive, hi, hiInclusive, isDescending);
+        }
+
+        @Override
+        public OakRBuffer next() {
+            ByteBuffer bb = advanceKeyOnly();
+            key.setByteBuffer(bb);
+            return key;
+
+        }
+    }
+
     class KeyLinearIterator extends Iter<OakRBuffer> {
 
         private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
@@ -1262,7 +1302,7 @@ class InternalOakMap<K, V> {
 
     Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
         //return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
-        return new KeyLinearIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        return new KeyReuseIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
     <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<ByteBuffer, T> transformer) {
