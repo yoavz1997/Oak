@@ -1302,7 +1302,7 @@ class InternalOakMap<K, V> {
 
     Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
         //return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
-        return new KeyReuseIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        return new KeyLinearIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
     <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<ByteBuffer, T> transformer) {

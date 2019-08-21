@@ -18,18 +18,21 @@ public class ThreadIndexCalculator {
 
     public int getIndex() {
 
-        int localInt = local.get();
-        if (localInt != -1) {
-            return localInt;
-        }
+//        int localInt = local.get();
+//        if (localInt != -1) {
+//            return localInt;
+//        }
+//        int tid = (int) Thread.currentThread().getId();
+//        int i = tid % MAX_THREADS;
+//        while(!indices[i].compareAndSet(-1, tid)) {
+//            //TODO get out of loop sometime
+//            i = (i + 1) % MAX_THREADS;
+//        }
+//        local.set(i);
+//        return i;
+
         int tid = (int) Thread.currentThread().getId();
-        int i = tid % MAX_THREADS;
-        while(!indices[i].compareAndSet(-1, tid)) {
-            //TODO get out of loop sometime
-            i = (i + 1) % MAX_THREADS;
-        }
-        local.set(i);
-        return i;
+        return tid % MAX_THREADS;
     }
 
     public void releaseIndex() {
