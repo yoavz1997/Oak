@@ -12,7 +12,6 @@ import com.oath.oak.Slice;
 import com.oath.oak.ThreadIndexCalculator;
 
 import java.nio.ByteBuffer;
-import java.util.AbstractMap;
 
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -107,7 +106,7 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
                 if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size))
                     break;     // all remaining buffers are too big
                 if (freeList.remove(bestFit)) {
-                    if (stats != null) stats.reclaim(size);
+                    if (stats != null) stats.allocate(size);
                     return bestFit.slice.getByteBuffer();
                 }
             }
@@ -157,6 +156,7 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     // Thread safe.
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this
     // Allocator!
+    // TODO: Why don't we assign the right block ID
     @Override
     public void free(ByteBuffer bb) {
         allocated.addAndGet(-(bb.remaining()));
@@ -228,10 +228,10 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     }
 
     public class Stats {
-        public int reclaimedBuffers;
+        public int allocatedBuffers;
         public int releasedBuffers;
         public long releasedBytes;
-        public long reclaimedBytes;
+        public long allocatedBytes;
 
         public void release(ByteBuffer bb) {
             synchronized (this) {
@@ -240,10 +240,10 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
             }
         }
 
-        public void reclaim(int size) {
+        public void allocate(int size) {
             synchronized (this) {
-                reclaimedBuffers++;
-                reclaimedBytes += size;
+                allocatedBuffers++;
+                allocatedBytes += size;
             }
         }
     }

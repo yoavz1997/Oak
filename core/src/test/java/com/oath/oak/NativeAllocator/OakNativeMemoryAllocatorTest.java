@@ -254,7 +254,7 @@ public class OakNativeMemoryAllocatorTest {
         // Requesting a small buffer should not reclaim existing buffers
         allocator.allocate(1);
         stats = allocator.getStats();
-        assertEquals(0, stats.reclaimedBuffers);
+        assertEquals(0, stats.allocatedBuffers);
 
         // Verify free list ordering
         ByteBuffer bb = allocator.allocate(4);
@@ -263,16 +263,16 @@ public class OakNativeMemoryAllocatorTest {
         assertEquals(8, bb.remaining());
 
         stats = allocator.getStats();
-        assertEquals(2, stats.reclaimedBuffers);
-        assertEquals(8, stats.reclaimedBytes);
+        assertEquals(2, stats.allocatedBuffers);
+        assertEquals(8, stats.allocatedBytes);
 
         bb = allocator.allocate(32);
         assertEquals(32, bb.remaining());
         bb = allocator.allocate(16);
         assertEquals(16, bb.remaining());
 
-        assertEquals(sizes.length, stats.reclaimedBuffers);
+        assertEquals(sizes.length, stats.allocatedBuffers);
         // We lost 4 bytes recycling an 8-byte buffer for a 4-byte allocation
-        assertEquals(bytesAllocated - 4, stats.reclaimedBytes);
+        assertEquals(bytesAllocated - 4, stats.allocatedBytes);
     }
 }

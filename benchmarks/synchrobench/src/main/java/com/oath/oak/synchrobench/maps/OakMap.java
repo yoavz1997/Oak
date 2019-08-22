@@ -140,8 +140,8 @@ public class OakMap<K extends MyBuffer, V extends MyBuffer> implements Compositi
         OakNativeMemoryAllocator.Stats stats = ma.getStats();
         System.out.printf("\tReleased buffers: \t\t%d\n", stats.releasedBuffers);
         System.out.printf("\tReleased bytes: \t\t%d\n", stats.releasedBytes);
-        System.out.printf("\tReclaimed buffers: \t\t%d\n", stats.reclaimedBuffers);
-        System.out.printf("\tReclaimed bytes: \t\t%d\n", stats.reclaimedBytes);
+        System.out.printf("\tReclaimed buffers: \t\t%d\n", stats.allocatedBuffers);
+        System.out.printf("\tReclaimed bytes: \t\t%d\n", stats.allocatedBytes);
 
     }
 }
