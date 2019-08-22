@@ -1260,7 +1260,6 @@ class InternalOakMap<K, V> {
     public class KeyLinearIterator extends Iter<OakRBuffer> {
 
         private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
-        private int counter = 2000000;
 
         KeyLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
             super(null, loInclusive, null, hiInclusive, isDescending);
@@ -1268,14 +1267,7 @@ class InternalOakMap<K, V> {
 
         @Override
         public OakRBuffer next() {
-            if (counter == 2000000) {
-                linearAdvanceKeyOnly(key);
-            } else {
-                counter--;
-                if (counter < 2) {
-                    state = null;
-                }
-            }
+            linearAdvanceKeyOnly(key);
             return key;
         }
     }
