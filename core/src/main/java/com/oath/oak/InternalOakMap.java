@@ -878,7 +878,7 @@ class InternalOakMap<K, V> {
         /**
          * the next node to return from next();
          */
-        private IteratorState<K, V> state;
+        protected IteratorState<K, V> state;
 
         /**
          * Initializes ascending iterator for entire range.
@@ -1260,6 +1260,7 @@ class InternalOakMap<K, V> {
     public class KeyLinearIterator extends Iter<OakRBuffer> {
 
         private OakRKeyReferBufferImpl key = new OakRKeyReferBufferImpl(memoryManager);
+        private int counter = 2000000;
 
         KeyLinearIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
             super(null, loInclusive, null, hiInclusive, isDescending);
@@ -1267,7 +1268,14 @@ class InternalOakMap<K, V> {
 
         @Override
         public OakRBuffer next() {
-            linearAdvanceKeyOnly(key);
+            if (counter == 2000000) {
+                linearAdvanceKeyOnly(key);
+            } else {
+                counter--;
+                if (counter < 2) {
+                    state = null;
+                }
+            }
             return key;
         }
     }
