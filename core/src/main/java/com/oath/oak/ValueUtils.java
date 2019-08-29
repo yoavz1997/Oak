@@ -12,8 +12,9 @@ import java.util.function.Function;
 
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
-import static com.oath.oak.ValueUtils.LockStats.*;
 import static com.oath.oak.ValueUtils.ValueResult.*;
+import static com.oath.oak.ValueUtils.LockStats.*;
+import static java.lang.Integer.reverseBytes;
 
 public class ValueUtils {
 
@@ -35,15 +36,6 @@ public class ValueUtils {
     public static final int VALUE_HEADER_SIZE = 4;
 
     private static Unsafe unsafe;
-
-    private static int reverseBytes(int i) {
-        int newI = 0;
-        newI += (i & 0xff) << 24;
-        newI += (i & 0xff00) << 16;
-        newI += (i & 0xff0000) << 8;
-        newI += (i & 0xff000000);
-        return newI;
-    }
 
     static {
         try {
@@ -119,7 +111,7 @@ public class ValueUtils {
         } while (!CAS(bb, oldHeader, oldHeader - 4));
     }
 
-    private static ValueResult lockWrite(ByteBuffer bb) {
+    static ValueResult lockWrite(ByteBuffer bb) {
         assert bb.isDirect();
         int oldHeader;
         do {
@@ -130,7 +122,7 @@ public class ValueUtils {
         return SUCCESS;
     }
 
-    private static void unlockWrite(ByteBuffer bb) {
+    static void unlockWrite(ByteBuffer bb) {
         bb.putInt(bb.position(), FREE.value);
         // maybe a fence?
     }
@@ -170,7 +162,7 @@ public class ValueUtils {
         return new AbstractMap.SimpleEntry<>(SUCCESS, transformation);
     }
 
-    public static <K, V> ValueResult put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, MemoryManager memoryManager) {
+    public static <K, V> ValueResult put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, GemmAllocator memoryManager) {
         ByteBuffer bb = lookUp.valueSlice.getByteBuffer();
         ValueResult res = lockWrite(bb);
         if (res != SUCCESS) return res;
@@ -207,7 +199,7 @@ public class ValueUtils {
         return SUCCESS;
     }
 
-    static ValueResult remove(Slice s, MemoryManager memoryManager) {
+    static ValueResult remove(Slice s, GemmAllocator memoryManager) {
         ByteBuffer bb = s.getByteBuffer();
         ValueResult res = deleteValue(bb);
         if (res != SUCCESS) return res;

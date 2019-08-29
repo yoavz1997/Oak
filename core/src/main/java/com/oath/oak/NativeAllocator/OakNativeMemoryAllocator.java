@@ -6,20 +6,19 @@
 
 package com.oath.oak.NativeAllocator;
 
-import com.oath.oak.OakMemoryAllocator;
+import com.oath.oak.OakBlockMemoryAllocator;
 import com.oath.oak.OakOutOfMemoryException;
 import com.oath.oak.Slice;
 import com.oath.oak.ThreadIndexCalculator;
 
 import java.nio.ByteBuffer;
-import java.util.AbstractMap;
 
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class OakNativeMemoryAllocator implements OakMemoryAllocator {
+public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
 
     private static class FreeChuck {
         long id;
@@ -87,7 +86,7 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
         }
     }
 
-    @Override
+
     public ByteBuffer allocate(int size) {
         return allocateSlice(size).getByteBuffer();
     }
@@ -146,7 +145,7 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     // Thread safe.
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this
     // Allocator!
-    @Override
+
     public void free(ByteBuffer bb) {
         allocated.addAndGet(-(bb.remaining()));
         if (stats != null) stats.release(bb);
@@ -178,8 +177,9 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     }
 
     // When some buffer need to be read from a random block
+    @Override
     public ByteBuffer readByteBufferFromBlockID(
-            Integer blockID, int bufferPosition, int bufferLength) {
+            int blockID, int bufferPosition, int bufferLength) {
         Block b = blocksArray[blockID];
         return b.getReadOnlyBufferForThread(bufferPosition, bufferLength);
     }

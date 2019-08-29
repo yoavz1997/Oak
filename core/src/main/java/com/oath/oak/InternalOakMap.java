@@ -32,7 +32,7 @@ class InternalOakMap<K, V> {
     private final AtomicReference<Chunk<K, V>> head;
     private final ByteBuffer minKey;
     private final Comparator<Object> comparator;
-    private final MemoryManager memoryManager;
+    private final GemmAllocator memoryManager;
     private final AtomicInteger size;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
@@ -52,7 +52,7 @@ class InternalOakMap<K, V> {
             OakSerializer<K> keySerializer,
             OakSerializer<V> valueSerializer,
             Comparator<Object> comparator,
-            MemoryManager memoryManager,
+            GemmAllocator memoryManager,
             int chunkMaxItems,
             int chunkBytesPerItem,
             ThreadIndexCalculator threadIndexCalculator) {

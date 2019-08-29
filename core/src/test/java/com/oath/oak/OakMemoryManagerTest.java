@@ -18,8 +18,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 public class OakMemoryManagerTest {
-    private OakMemoryAllocator valuesMemoryAllocator;
-    private OakMemoryAllocator keysMemoryAllocator;
+    private OakBlockMemoryAllocator valuesMemoryAllocator;
+    private OakBlockMemoryAllocator keysMemoryAllocator;
 
     private MemoryManager memoryManager;
     private long allocatedBytes;
@@ -27,9 +27,9 @@ public class OakMemoryManagerTest {
     @Before
     public void setUp() {
         allocatedBytes = 0;
-        valuesMemoryAllocator = mock(OakMemoryAllocator.class);
+        valuesMemoryAllocator = mock(OakBlockMemoryAllocator.class);
         keysMemoryAllocator = new OakNativeMemoryAllocator(128);
-        when(valuesMemoryAllocator.allocate(anyInt())).thenAnswer((Answer) invocation -> {
+        when(valuesMemoryAllocator.allocateSlice(anyInt())).thenAnswer((Answer) invocation -> {
             int size = (int) invocation.getArguments()[0];
             allocatedBytes += size;
             return ByteBuffer.allocate(size);
@@ -39,7 +39,7 @@ public class OakMemoryManagerTest {
             ByteBuffer bb = (ByteBuffer) invocation.getArguments()[0];
             allocatedBytes -= bb.capacity();
             return allocatedBytes;
-        }).when(valuesMemoryAllocator).free(any());
+        }).when(valuesMemoryAllocator).freeSlice(any());
         when(valuesMemoryAllocator.allocated()).thenAnswer((Answer) invocationOnMock -> allocatedBytes);
         memoryManager = new MemoryManager(keysMemoryAllocator);
     }

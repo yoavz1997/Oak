@@ -36,13 +36,13 @@ class Rebalancer<K, V> {
     private int itemsInRange;
     private final Comparator<Object> comparator;
     private final boolean offHeap;
-    private final MemoryManager memoryManager;
+    private final GemmAllocator memoryManager;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
 
     /*-------------- Constructors --------------*/
 
-    Rebalancer(Chunk<K, V> chunk, Comparator<Object> comparator, boolean offHeap, MemoryManager memoryManager,
+    Rebalancer(Chunk<K, V> chunk, Comparator<Object> comparator, boolean offHeap, GemmAllocator memoryManager,
                OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
                ThreadIndexCalculator threadIndexCalculator) {
         this.rebalanceSize = 2;

@@ -10,8 +10,10 @@ import sun.misc.Unsafe;
 
 import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EmptyStackException;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
@@ -27,9 +29,16 @@ public class Chunk<K, V> {
     enum OFFSET {
         NEXT(0), KEY_POSITION(1), VALUE_STATS(2), VALUE_POSITION(2),
         VALUE_BLOCK_AND_LENGTH(3), VALUE_BLOCK(3), VALUE_LENGTH(3), KEY_BLOCK_AND_LENGTH(4),
-        KEY_BLOCK(4), KEY_LENGTH(4);
+        KEY_BLOCK(4), KEY_LENGTH(4), VALUE_GENERATION(5);
 
         public final int value;
+        public static final int biggestOffset;
+
+        static {
+            Optional<Integer> max = Arrays.stream(OFFSET.values()).map(offset -> offset.value).max(Comparator.comparing(Integer::valueOf));
+            assert max.isPresent();
+            biggestOffset = max.get() + 1;
+        }
 
         OFFSET(int value) {
             this.value = value;
@@ -50,7 +59,7 @@ public class Chunk<K, V> {
     // index of first item in array, after head (not necessarily first in list!)
     private static final int FIRST_ITEM = 1;
 
-    private static final int FIELDS = 5;  // # of fields in each item of key array
+    private static final int FIELDS = OFFSET.biggestOffset;  // # of fields in each item of key array
     //    private static final int OFFSET_NEXT = 0;
 //    private static final int OFFSET_KEY_POSITION = 1;
 //    private static final int OFFSET_KEY_LENGTH = 2;
@@ -78,7 +87,7 @@ public class Chunk<K, V> {
     public static final int MAX_ITEMS_DEFAULT = 4096;
 
     private static final Unsafe unsafe;
-    private final MemoryManager memoryManager;
+    private final GemmAllocator memoryManager;
     ByteBuffer minKey;       // minimal key that can be put in this chunk
     AtomicMarkableReference<Chunk<K, V>> next;
     Comparator<Object> comparator;
@@ -123,7 +132,7 @@ public class Chunk<K, V> {
      * @param creator               the chunk that is responsible for this chunk creation
      * @param threadIndexCalculator
      */
-    Chunk(ByteBuffer minKey, Chunk<K, V> creator, Comparator<Object> comparator, MemoryManager memoryManager,
+    Chunk(ByteBuffer minKey, Chunk<K, V> creator, Comparator<Object> comparator, GemmAllocator memoryManager,
           int maxItems, AtomicInteger externalSize, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
           ThreadIndexCalculator threadIndexCalculator) {
         this.memoryManager = memoryManager;
@@ -234,7 +243,7 @@ public class Chunk<K, V> {
         int blockID = getEntryField(entryIndex, OFFSET.KEY_BLOCK);
         int keyPosition = getEntryField(entryIndex, OFFSET.KEY_POSITION);
         int length = getEntryField(entryIndex, OFFSET.KEY_LENGTH);
-        Slice s = new Slice(blockID, keyPosition, length, memoryManager);
+        Slice s = memoryManager.getSliceFromBlockID(blockID, keyPosition, length);
 
         memoryManager.releaseSlice(s);
     }
@@ -327,7 +336,7 @@ public class Chunk<K, V> {
         int[] valueArray = UnsafeUtils.longToInts(valueStats);
         if ((valueArray[0] >>> VALUE_BLOCK_SHIFT) == INVALID_BLOCK_ID)
             return null;
-        return new Slice(valueArray[0] >>> VALUE_BLOCK_SHIFT, valueArray[1], valueArray[0] & VALUE_LENGTH_MASK, memoryManager);
+        return memoryManager.getSliceFromBlockID(valueArray[0] >>> VALUE_BLOCK_SHIFT, valueArray[1], valueArray[0] & VALUE_LENGTH_MASK);
     }
 
     // Assuming the reading of valuePosition and valueBlockAndLength is atomic!
