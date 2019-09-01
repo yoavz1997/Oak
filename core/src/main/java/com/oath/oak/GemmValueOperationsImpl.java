@@ -12,6 +12,7 @@ import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
 import static com.oath.oak.GemmAllocator.GEMM_HEADER_SIZE;
 import static com.oath.oak.GemmValueOperationsImpl.LockStates.*;
+import static com.oath.oak.GemmValueUtils.Result.FALSE;
 import static com.oath.oak.GemmValueUtils.Result.TRUE;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 import static java.lang.Long.reverseBytes;
@@ -56,26 +57,31 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, int generation, OakSerializer<V> serializer, GemmAllocator memoryManager) {
-        Slice s = lookUp.valueSlice;
-        Result result = lockWrite(s, generation);
+    public <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+        Result result = lockWrite(lookUp.valueSlice, lookUp.generation);
         if (result != TRUE) return result;
-        int capacity = serializer.calculateSize(newVal);
-        if (capacity + getHeaderSize() < s.getByteBuffer().remaining()) {
-            s = moveValue(chunk, lookUp, generation, capacity, memoryManager);
-        }
-        ByteBuffer bb = getActualValue(s);
-        serializer.serialize(newVal, bb);
+        Slice s = innerPut(chunk, lookUp, newVal, serializer, memoryManager);
         unlockWrite(s);
         return TRUE;
     }
 
-    private <K, V> Slice moveValue(Chunk<K, V> chunk, Chunk.LookUp lookUp, int generation, int capacity, GemmAllocator memoryManager) {
+    private <K, V> Slice innerPut(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+        Slice s = lookUp.valueSlice;
+        int capacity = serializer.calculateSize(newVal);
+        if (capacity + getHeaderSize() < s.getByteBuffer().remaining()) {
+            s = moveValue(chunk, lookUp, capacity, memoryManager);
+        }
+        ByteBuffer bb = getActualValue(s);
+        serializer.serialize(newVal, bb);
+        return s;
+    }
+
+    private <K, V> Slice moveValue(Chunk<K, V> chunk, Chunk.LookUp lookUp, int capacity, GemmAllocator memoryManager) {
         Slice s = lookUp.valueSlice;
         putInt(s, GEMM_HEADER_SIZE, MOVED.value);
         memoryManager.releaseSlice(s);
         s = memoryManager.allocateSlice(capacity + getHeaderSize());
-        putInt(s, 0, generation);
+        putInt(s, 0, lookUp.generation);
         putInt(s, GEMM_HEADER_SIZE, LOCKED.value);
         int valueBlockAndLength = (s.getBlockID() << VALUE_BLOCK_SHIFT) | ((capacity + VALUE_HEADER_SIZE) & VALUE_LENGTH_MASK);
         assert chunk.longCasEntriesArray(lookUp.entryIndex, Chunk.OFFSET.VALUE_STATS, lookUp.valueStats, UnsafeUtils.intsToLong(valueBlockAndLength, s.getByteBuffer().position()));
@@ -83,7 +89,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public Result compute(Slice s, int generation, Consumer<OakWBuffer> computer) {
+    public Result compute(Slice s, Consumer<OakWBuffer> computer, int generation) {
         Result result = lockWrite(s, generation);
         if (result != TRUE) return result;
         computer.accept(new OakWBufferImpl(s.getByteBuffer(), instance));
@@ -92,8 +98,8 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public Result remove(Slice s, int generation, GemmAllocator memoryManager) {
-        Result result = deleteValue(s, generation, memoryManager);
+    public Result remove(Slice s, GemmAllocator memoryManager, int generation) {
+        Result result = deleteValue(s, generation);
         if (result != TRUE) return result;
         // releasing the actual value and not the header
         memoryManager.releaseSlice(s);
@@ -101,8 +107,34 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
+    public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+        Result result = lockWrite(lookUp.valueSlice, lookUp.generation);
+        if (result != TRUE) return new AbstractMap.SimpleEntry<>(result, null);
+        V oldValue = valueDeserializeTransformer.apply(lookUp.valueSlice.getByteBuffer());
+        Slice s = innerPut(chunk, lookUp, value, serializer, memoryManager);
+        unlockWrite(s);
+        return new AbstractMap.SimpleEntry<>(TRUE, oldValue);
+    }
+
+    @Override
+    public <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+        Result result = lockWrite(lookUp.valueSlice, lookUp.generation);
+        if (result != TRUE) return result;
+        V oldValue = valueDeserializeTransformer.apply(lookUp.valueSlice.getByteBuffer());
+        if (oldValue != expected) return FALSE;
+        Slice s = innerPut(chunk, lookUp, value, serializer, memoryManager);
+        unlockWrite(s);
+        return TRUE;
+    }
+
+    @Override
     public int getHeaderSize() {
-        return VALUE_HEADER_SIZE + GEMM_HEADER_SIZE;
+        return VALUE_HEADER_SIZE + getLockLocation();
+    }
+
+    @Override
+    public int getLockLocation() {
+        return GEMM_HEADER_SIZE;
     }
 
     @Override
@@ -164,7 +196,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public Result deleteValue(Slice s, int generation, GemmAllocator gemmAllocator) {
+    public Result deleteValue(Slice s, int generation) {
         do {
             int oldGeneration = getInt(s, 0);
             if (oldGeneration != generation) return Result.RETRY;

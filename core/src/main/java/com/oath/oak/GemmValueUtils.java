@@ -2,7 +2,7 @@ package com.oath.oak;
 
 import java.nio.ByteBuffer;
 
-public interface OffHeapValueUtils {
+public interface GemmValueUtils {
     enum Result {
         TRUE, FALSE, RETRY
     }
@@ -23,7 +23,7 @@ public interface OffHeapValueUtils {
 
     Result unlockWrite(Slice s);
 
-    Result deleteValue(Slice s, int generation, GemmAllocator gemmAllocator);
+    Result deleteValue(Slice s, int generation);
 
     Result isValueDeleted(Slice s, int generation);
 }

@@ -7,14 +7,14 @@ import org.junit.Test;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.oath.oak.ValueUtils.ValueResult.FAILURE;
-import static com.oath.oak.ValueUtils.ValueResult.SUCCESS;
+import static com.oath.oak.GemmValueUtils.Result.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class ValueUtilsTest {
+public class GemmValueUtilsTest {
     private GemmAllocator gemmAllocator;
     private Slice s;
+    private final GemmValueUtils operator = new GemmValueOperationsImpl();
 
     @Before
     public void init() {
@@ -25,27 +25,26 @@ public class ValueUtilsTest {
 
     @Test
     public void testCannotReadLockDeleted() {
-        assertEquals(SUCCESS, ValueUtils.remove(s, gemmAllocator));
-        assertEquals(FAILURE, ValueUtils.lockRead(s));
+        assertEquals(TRUE, operator.deleteValue(s, 0));
+        assertEquals(FALSE, operator.lockRead(s, 0));
     }
 
     @Test
     public void testCannotWriteLockDeleted() {
-        assertEquals(SUCCESS, ValueUtils.remove(s, gemmAllocator));
-        assertEquals(FAILURE, ValueUtils.compute(s, buffer -> {
-        }));
+        assertEquals(TRUE, operator.deleteValue(s, 0));
+        assertEquals(FALSE, operator.lockWrite(s, 0));
     }
 
     @Test
     public void testCannotDeletedMultipleTimes() {
-        assertEquals(SUCCESS, ValueUtils.remove(s, gemmAllocator));
-        assertEquals(FAILURE, ValueUtils.remove(s, gemmAllocator));
+        assertEquals(TRUE, operator.deleteValue(s, 0));
+        assertEquals(FALSE, operator.deleteValue(s, 0));
     }
 
     @Test
     public void testCanReadLockMultipleTimes() {
         for (int i = 0; i < 10000; i++) {
-            assertEquals(SUCCESS, ValueUtils.lockRead(s));
+            assertEquals(TRUE, operator.lockRead(s, 0));
         }
     }
 
@@ -53,22 +52,21 @@ public class ValueUtilsTest {
     public void testCannotWriteLockReadLocked() throws InterruptedException {
         AtomicInteger flag = new AtomicInteger(0);
         Thread writer = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.compute(s, oakWBuffer -> {
-            }));
+            assertEquals(TRUE, operator.lockWrite(s, 0));
             assertEquals(2, flag.get());
         });
         Thread reader = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.lockRead(s));
+            assertEquals(TRUE, operator.lockRead(s, 0));
             flag.incrementAndGet();
-            ValueUtils.unlockRead(s);
+            operator.unlockRead(s, 0);
         });
-        assertEquals(SUCCESS, ValueUtils.lockRead(s));
+        assertEquals(TRUE, operator.lockRead(s, 0));
         writer.start();
         Thread.sleep(2000);
         reader.start();
         Thread.sleep(2000);
         flag.incrementAndGet();
-        ValueUtils.unlockRead(s);
+        operator.unlockRead(s, 0);
         reader.join();
         writer.join();
     }
@@ -77,21 +75,21 @@ public class ValueUtilsTest {
     public void testCannotDeletedReadLocked() throws InterruptedException {
         AtomicInteger flag = new AtomicInteger(0);
         Thread deleter = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.remove(s, gemmAllocator));
+            assertEquals(TRUE, operator.deleteValue(s, 0));
             assertEquals(2, flag.get());
         });
         Thread reader = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.lockRead(s));
+            assertEquals(TRUE, operator.lockRead(s, 0));
             flag.incrementAndGet();
-            ValueUtils.unlockRead(s);
+            operator.unlockRead(s, 0);
         });
-        assertEquals(SUCCESS, ValueUtils.lockRead(s));
+        assertEquals(TRUE, operator.lockRead(s, 0));
         deleter.start();
         Thread.sleep(2000);
         reader.start();
         Thread.sleep(2000);
         flag.incrementAndGet();
-        ValueUtils.unlockRead(s);
+        operator.unlockRead(s, 0);
         reader.join();
         deleter.join();
     }
@@ -100,14 +98,14 @@ public class ValueUtilsTest {
     public void testCannotReadLockWriteLocked() throws InterruptedException {
         AtomicBoolean flag = new AtomicBoolean(false);
         Thread reader = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.lockRead(s));
+            assertEquals(TRUE, operator.lockRead(s, 0));
             assertTrue(flag.get());
         });
-        assertEquals(SUCCESS, ValueUtils.lockWrite(s.getByteBuffer()));
+        assertEquals(TRUE, operator.lockWrite(s, 0));
         reader.start();
         Thread.sleep(2000);
         flag.set(true);
-        ValueUtils.unlockWrite(s.getByteBuffer());
+        operator.unlockWrite(s);
         reader.join();
     }
 
@@ -115,14 +113,14 @@ public class ValueUtilsTest {
     public void testCannotWriteLockMultipleTimes() throws InterruptedException {
         AtomicBoolean flag = new AtomicBoolean(false);
         Thread writer = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.lockWrite(s.getByteBuffer()));
+            assertEquals(TRUE, operator.lockWrite(s, 0));
             assertTrue(flag.get());
         });
-        assertEquals(SUCCESS, ValueUtils.lockWrite(s.getByteBuffer()));
+        assertEquals(TRUE, operator.lockWrite(s, 0));
         writer.start();
         Thread.sleep(2000);
         flag.set(true);
-        ValueUtils.unlockWrite(s.getByteBuffer());
+        operator.unlockWrite(s);
         writer.join();
     }
 
@@ -130,14 +128,14 @@ public class ValueUtilsTest {
     public void testCannotDeletedWriteLocked() throws InterruptedException {
         AtomicBoolean flag = new AtomicBoolean(false);
         Thread deleter = new Thread(() -> {
-            assertEquals(SUCCESS, ValueUtils.remove(s, gemmAllocator));
+            assertEquals(TRUE, operator.deleteValue(s, 0));
             assertTrue(flag.get());
         });
-        assertEquals(SUCCESS, ValueUtils.lockWrite(s.getByteBuffer()));
+        assertEquals(TRUE, operator.deleteValue(s, 0));
         deleter.start();
         Thread.sleep(2000);
         flag.set(true);
-        ValueUtils.unlockWrite(s.getByteBuffer());
+        operator.unlockWrite(s);
         deleter.join();
     }
 

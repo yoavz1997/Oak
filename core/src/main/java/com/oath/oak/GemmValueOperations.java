@@ -5,7 +5,7 @@ import java.util.AbstractMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-public interface ValueOperations extends OffHeapValueUtils {
+public interface GemmValueOperations extends GemmValueUtils {
 
     void unsafeBufferToIntArrayCopy(ByteBuffer bb, int srcPosition, int[] dstArray, int countInts);
 

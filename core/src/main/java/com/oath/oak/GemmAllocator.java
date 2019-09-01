@@ -8,8 +8,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class GemmAllocator implements Closeable {
-    public static final int RELEASE_LIST_LIMIT = 1024;
+    static final int RELEASE_LIST_LIMIT = 1024;
     static final int GEMM_HEADER_SIZE = 4;
+    public static final int INVALID_GENERATION = -1;
     private ThreadIndexCalculator threadIndexCalculator;
     private List<List<Slice>> releaseLists;
     private AtomicInteger globalGemmNumber;
