@@ -12,7 +12,7 @@ import java.nio.ByteBuffer;
 // Slice is allocated for data (key or value) and can be de-allocated later
 public class Slice {
     private final int blockID;
-    private final ByteBuffer buffer;
+    private ByteBuffer buffer;
 
     public Slice(int blockID, ByteBuffer buffer) {
         this.blockID = blockID;
@@ -25,5 +25,10 @@ public class Slice {
 
     public int getBlockID() {
         return blockID;
+    }
+
+    public Slice readOnly() {
+        buffer = buffer.asReadOnlyBuffer();
+        return this;
     }
 }

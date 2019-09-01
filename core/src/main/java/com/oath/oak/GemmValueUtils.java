@@ -1,15 +1,15 @@
 package com.oath.oak;
 
 import java.nio.ByteBuffer;
-import java.util.Optional;
 
-public interface GemmValueUtils {
-
+public interface OffHeapValueUtils {
     enum Result {
         TRUE, FALSE, RETRY
     }
 
     int getHeaderSize();
+
+    int getLockLocation();
 
     ByteBuffer getActualValueThreadSafe(Slice s);
 
