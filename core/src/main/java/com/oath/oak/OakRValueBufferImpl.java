@@ -9,25 +9,35 @@ package com.oath.oak;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ConcurrentModificationException;
+import java.util.Map;
 import java.util.function.Function;
+
+import static com.oath.oak.GemmValueUtils.Result.*;
 
 // remove header
 public class OakRValueBufferImpl implements OakRBuffer {
-
+    private final Slice valueSlice;
+    private final ByteBuffer keyBuffer;
     private final ByteBuffer bb;
+    private final int generation;
+    private final GemmValueOperations operator;
 
-    OakRValueBufferImpl(ByteBuffer bb) {
-        this.bb = bb;
+    OakRValueBufferImpl(Slice valueSlice, int generation, ByteBuffer keyBuffer, GemmValueOperations operator) {
+        this.valueSlice = valueSlice;
+        this.keyBuffer = keyBuffer;
+        this.bb = valueSlice.getByteBuffer();
+        this.generation = generation;
+        this.operator = operator;
     }
 
     private int valuePosition() {
-        return bb.position() + ValueUtils.VALUE_HEADER_SIZE;
+        return bb.position() + operator.getHeaderSize();
     }
 
     @Override
     public int capacity() {
         start();
-        int capacity = bb.remaining() - ValueUtils.VALUE_HEADER_SIZE;
+        int capacity = bb.remaining() - valuePosition();
         end();
         return capacity;
     }
@@ -121,31 +131,35 @@ public class OakRValueBufferImpl implements OakRBuffer {
         if (transformer == null) {
             throw new NullPointerException();
         }
-        T retVal = ValueUtils.transform(bb, transformer);
-        if (retVal == null) {
+        Map.Entry<GemmValueUtils.Result, T> result = operator.transform(valueSlice, transformer, generation);
+        if (result.getKey() == FALSE)
             throw new ConcurrentModificationException();
-        }
-        return retVal;
+        else if (result.getKey() == RETRY)
+            throw new UnsupportedOperationException();
+        return result.getValue();
     }
 
     @Override
     public void unsafeCopyBufferToIntArray(int srcPosition, int[] dstArray, int countInts) {
         start();
         ByteBuffer dup = bb.duplicate();
-        dup.position(dup.position() + ValueUtils.VALUE_HEADER_SIZE);
-        ValueUtils.unsafeBufferToIntArrayCopy(dup, srcPosition, dstArray, countInts);
+        dup.position(dup.position() + operator.getHeaderSize());
+        operator.unsafeBufferToIntArrayCopy(dup, srcPosition, dstArray, countInts);
         end();
     }
 
     private void start() {
-        // TODO: What to do if the value was moved?
-        ValueUtils.ValueResult res = ValueUtils.lockRead(bb);
-        if (res != ValueUtils.ValueResult.SUCCESS)
+        GemmValueUtils.Result res = operator.lockRead(valueSlice, generation);
+        if (res == FALSE)
             throw new ConcurrentModificationException();
+        if (res == RETRY) {
+            throw new UnsupportedOperationException();
+            //getValueTransformation
+        }
     }
 
     private void end() {
-        ValueUtils.unlockRead(bb);
+        operator.unlockRead(valueSlice, generation);
     }
 
 }

@@ -20,6 +20,8 @@ import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
+import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
+import static com.oath.oak.GemmValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 
 public class Chunk<K, V> {
@@ -60,13 +62,7 @@ public class Chunk<K, V> {
     private static final int FIRST_ITEM = 1;
 
     private static final int FIELDS = OFFSET.biggestOffset;  // # of fields in each item of key array
-    //    private static final int OFFSET_NEXT = 0;
-//    private static final int OFFSET_KEY_POSITION = 1;
-//    private static final int OFFSET_KEY_LENGTH = 2;
-//    private static final int OFFSET_HANDLE_INDEX = 3;
-    // key block is not used as an offset, rather as request differentiation,
     // key block is part of key length integer, thus key length is limited to 65KB
-//    private static final int OFFSET_KEY_BLOCK = 4;
     private static final int KEY_LENGTH_MASK = 0xffff; // 16 lower bits
     private static final int KEY_BLOCK_SHIFT = 16;
     // Assume the length of a value is up to 8MB because there can be up to 512 blocks
@@ -99,10 +95,8 @@ public class Chunk<K, V> {
     private AtomicReference<Rebalancer<K, V>> rebalancer;
     private final int[] entries;    // array is initialized to 0, i.e., NONE - this is important!
 
-    //    private final Handle<V>[] handles;
     private AtomicInteger pendingOps;
     private final AtomicInteger entryIndex;    // points to next free index of entry array
-    //    private final AtomicInteger handleIndex;   // points to next free index of entry array
     private final Statistics statistics;
     // # of sorted items at entry-array's beginning (resulting from split)
     private AtomicInteger sortedCount;
@@ -111,6 +105,7 @@ public class Chunk<K, V> {
     // for writing the keys into the bytebuffers
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
+    private final GemmValueOperations operator;
 
     /*-------------- Constructors --------------*/
 
@@ -134,7 +129,7 @@ public class Chunk<K, V> {
      */
     Chunk(ByteBuffer minKey, Chunk<K, V> creator, Comparator<Object> comparator, GemmAllocator memoryManager,
           int maxItems, AtomicInteger externalSize, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
-          ThreadIndexCalculator threadIndexCalculator) {
+          ThreadIndexCalculator threadIndexCalculator, GemmValueOperations operator) {
         this.memoryManager = memoryManager;
         this.maxItems = maxItems;
         this.entries = new int[maxItems * FIELDS + FIRST_ITEM];
@@ -156,6 +151,7 @@ public class Chunk<K, V> {
 
         this.keySerializer = keySerializer;
         this.valueSerializer = valueSerializer;
+        this.operator = operator;
     }
 
     static class OpData {
@@ -258,6 +254,10 @@ public class Chunk<K, V> {
         return readKey(maxEntry);
     }
 
+    int getGeneration(int item) {
+        return getEntryField(item, OFFSET.VALUE_GENERATION);
+    }
+
     /**
      * gets the field of specified offset for given item in entry array
      */
@@ -356,6 +356,7 @@ public class Chunk<K, V> {
         // binary search sorted part of key array to quickly find node to start search at
         // it finds previous-to-key so start with its next
         int curr = getEntryField(binaryFind(key), OFFSET.NEXT);
+        int currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
         int cmp;
         // iterate until end of list (or key is found)
         while (curr != NONE) {
@@ -368,17 +369,25 @@ public class Chunk<K, V> {
                 // if keys are equal - we've found the item
             else if (cmp == 0) {
                 long valueStats = getValueStats(curr);
+                // Busy-wait until the generation is set
+                while (currGen == INVALID_GENERATION) {
+                    currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
+                }
                 Slice valueSlice = buildValueSlice(valueStats);
                 if (valueSlice == null) {
                     assert valueStats == 0;
-                    return new LookUp(null, valueStats, curr);
+                    return new LookUp(null, valueStats, curr, INVALID_GENERATION);
                 }
-                if (ValueUtils.isValueDeleted(valueSlice)) return new LookUp(null, valueStats, curr);
-                return new LookUp(valueSlice, valueStats, curr);
+                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, curr);
+                if (result == TRUE) return new LookUp(null, valueStats, curr, currGen);
+                else if (result == RETRY) return lookUp(key);
+                new LookUp(valueSlice, valueStats, curr, currGen);
             }
             // otherwise- proceed to next item
-            else
+            else {
                 curr = getEntryField(curr, OFFSET.NEXT);
+                currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
+            }
         }
         return null;
     }
@@ -388,11 +397,13 @@ public class Chunk<K, V> {
         final Slice valueSlice;
         final long valueStats;
         final int entryIndex;
+        final int generation;
 
-        LookUp(Slice valueSlice, long valueStats, int entryIndex) {
+        LookUp(Slice valueSlice, long valueStats, int entryIndex, int generation) {
             this.valueSlice = valueSlice;
             this.valueStats = valueStats;
             this.entryIndex = entryIndex;
+            this.generation = generation;
         }
     }
 
@@ -550,13 +561,13 @@ public class Chunk<K, V> {
      * write value in place
      **/
     long writeValueOffHeap(V value) {
-        int valueLength = valueSerializer.calculateSize(value) + ValueUtils.VALUE_HEADER_SIZE;
+        int valueLength = valueSerializer.calculateSize(value) + operator.getLockLocation();
         Slice slice = memoryManager.allocateSlice(valueLength);
         // initializing the header lock
         slice.getByteBuffer().putInt(slice.getByteBuffer().position(), 0);
         // just allocated byte buffer is ensured to have position 0
         // One duplication
-        valueSerializer.serialize(value, ValueUtils.getActualValueBufferLessDuplications(slice.getByteBuffer()));
+        valueSerializer.serialize(value, operator.getActualValueThreadSafe(slice));
         int valueBlockAndLength = (slice.getBlockID() << VALUE_BLOCK_SHIFT) | (valueLength & VALUE_LENGTH_MASK);
         return UnsafeUtils.intsToLong(valueBlockAndLength, slice.getByteBuffer().position());
     }
@@ -603,9 +614,12 @@ public class Chunk<K, V> {
         } else if (operation == Operation.PUT_IF_ABSENT) {
             return foundValueStats; // too late
         } else if (operation == Operation.COMPUTE) {
+            int currGen = getGeneration(opData.entryIndex);
+            while (currGen == INVALID_GENERATION)
+                currGen = getGeneration(opData.entryIndex);
             Slice valueSlice = buildValueSlice(foundValueStats);
-            ValueUtils.ValueResult succ = ValueUtils.compute(valueSlice, opData.computer);
-            if (succ != ValueUtils.ValueResult.SUCCESS) {
+            GemmValueUtils.Result succ = operator.compute(valueSlice, opData.computer, currGen);
+            if (succ != TRUE) {
                 // we tried to perform the compute but the value was deleted/moved,
                 // we can get to pointToValue with Operation.COMPUTE only from PIACIP
                 // retry to make a put and to attach the new handle
@@ -999,7 +1013,6 @@ public class Chunk<K, V> {
             next = stack.pop();
             int valueBlock = getEntryField(next, OFFSET.VALUE_BLOCK);
             while (next != Chunk.NONE && valueBlock == INVALID_BLOCK_ID) {
-//            while (next != Chunk.NONE && (handle < 0 || (handle > 0 && handles[handle].isDeleted()))) {
                 if (!stack.empty()) {
                     next = stack.pop();
                     valueBlock = getEntryField(next, OFFSET.VALUE_BLOCK);

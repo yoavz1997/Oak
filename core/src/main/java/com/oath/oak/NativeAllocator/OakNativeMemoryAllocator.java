@@ -146,6 +146,7 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this
     // Allocator!
 
+    @Deprecated
     public void free(ByteBuffer bb) {
         allocated.addAndGet(-(bb.remaining()));
         if (stats != null) stats.release(bb);
