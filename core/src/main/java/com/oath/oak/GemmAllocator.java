@@ -31,7 +31,7 @@ public class GemmAllocator implements Closeable {
         manager.close();
     }
 
-    public int getCurrentGeneration() {
+    int getCurrentGeneration() {
         return globalGemmNumber.get();
     }
 
@@ -39,15 +39,13 @@ public class GemmAllocator implements Closeable {
         return manager.allocated();
     }
 
-    // The returned slice's position is after the GEMM, but there is no need to slice it
-    public Slice allocateSlice(int size) {
+    Slice allocateSlice(int size) {
         Slice s = manager.allocateSlice(size + GEMM_HEADER_SIZE);
         s.getByteBuffer().putInt(s.getByteBuffer().position(), getCurrentGeneration());
-        assert s.getByteBuffer().remaining() == size;
         return s;
     }
 
-    public void releaseSlice(Slice s) {
+    void releaseSlice(Slice s) {
         int idx = threadIndexCalculator.getIndex();
         List<Slice> myReleaseList = this.releaseLists.get(idx);
         myReleaseList.add(s);
@@ -58,16 +56,15 @@ public class GemmAllocator implements Closeable {
         }
     }
 
-    public Slice getSliceFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return new Slice(BlockID, manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength));
+    Slice getSliceFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
+        return new Slice(BlockID, getByteBufferFromBlockID(BlockID, bufferPosition, bufferLength));
     }
 
-    public ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength);
+    ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
+        return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength + GEMM_HEADER_SIZE);
     }
 
-    public static boolean verifyGeneration(ByteBuffer bb, int generation) {
-        long writtenGeneration = bb.getLong(bb.position() - GEMM_HEADER_SIZE);
-        return writtenGeneration == generation;
+    Slice allocateSliceForKeys(int size) {
+        return manager.allocateSlice(size);
     }
 }

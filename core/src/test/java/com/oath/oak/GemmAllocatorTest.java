@@ -16,7 +16,7 @@ public class GemmAllocatorTest {
             allocatedSlices[i] = gemmAllocator.allocateSlice(i + 5);
         }
         for (int i = 0; i < GemmAllocator.RELEASE_LIST_LIMIT; i++) {
-            assertEquals(i + 5, allocatedSlices[i].getByteBuffer().remaining());
+            assertEquals(i + 5 + GemmAllocator.GEMM_HEADER_SIZE, allocatedSlices[i].getByteBuffer().remaining());
             gemmAllocator.releaseSlice(allocatedSlices[i]);
         }
         long newGeneration = gemmAllocator.getCurrentGeneration();
