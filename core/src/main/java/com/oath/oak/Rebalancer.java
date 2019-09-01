@@ -39,12 +39,13 @@ class Rebalancer<K, V> {
     private final GemmAllocator memoryManager;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
+    private final GemmValueOperations operator;
 
     /*-------------- Constructors --------------*/
 
     Rebalancer(Chunk<K, V> chunk, Comparator<Object> comparator, boolean offHeap, GemmAllocator memoryManager,
                OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
-               ThreadIndexCalculator threadIndexCalculator) {
+               ThreadIndexCalculator threadIndexCalculator, GemmValueOperations operator) {
         this.rebalanceSize = 2;
         this.maxAfterMergePart = 0.7;
         this.lowThreshold = 0.5;
@@ -63,6 +64,7 @@ class Rebalancer<K, V> {
         this.keySerializer = keySerializer;
         this.valueSerializer = valueSerializer;
         this.threadIndexCalculator = threadIndexCalculator;
+        this.operator = operator;
     }
 
     /*-------------- Methods --------------*/
@@ -137,7 +139,7 @@ class Rebalancer<K, V> {
         Chunk<K, V> currFrozen = firstFrozen;
         Chunk<K, V> currNewChunk = new Chunk<>(firstFrozen.minKey, firstFrozen, firstFrozen.comparator, memoryManager,
                 currFrozen.getMaxItems(), currFrozen.externalSize,
-                keySerializer, valueSerializer, threadIndexCalculator);
+                keySerializer, valueSerializer, threadIndexCalculator, operator);
 
         int ei = firstFrozen.getFirstItemEntryIndex();
         List<Chunk<K, V>> newChunks = new LinkedList<>();
@@ -179,7 +181,7 @@ class Rebalancer<K, V> {
 
                     Chunk<K, V> c = new Chunk<>(newMinKey, firstFrozen, currFrozen.comparator, memoryManager,
                             currFrozen.getMaxItems(), currFrozen.externalSize,
-                            keySerializer, valueSerializer, threadIndexCalculator);
+                            keySerializer, valueSerializer, threadIndexCalculator, operator);
                     currNewChunk.next.set(c, false);
                     newChunks.add(currNewChunk);
                     currNewChunk = c;

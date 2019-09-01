@@ -34,6 +34,7 @@ public class OakMapBuilder<K, V> {
     private int chunkBytesPerItem;
     private long memoryCapacity;
     private OakBlockMemoryAllocator memoryAllocator;
+    private GemmValueOperations operator;
 
     public OakMapBuilder() {
         this.keySerializer = null;
@@ -46,6 +47,7 @@ public class OakMapBuilder<K, V> {
         this.chunkMaxItems = Chunk.MAX_ITEMS_DEFAULT;
         this.memoryCapacity = MAX_MEM_CAPACITY;
         this.memoryAllocator = null;
+        this.operator = new GemmValueOperationsImpl();
     }
 
     public OakMapBuilder<K, V> setKeySerializer(OakSerializer<K> keySerializer) {
@@ -102,7 +104,7 @@ public class OakMapBuilder<K, V> {
                 keySerializer,
                 valueSerializer,
                 comparator, chunkMaxItems,
-                chunkBytesPerItem, memoryManager, threadIndexCalculator);
+                chunkBytesPerItem, memoryManager, threadIndexCalculator, operator);
     }
 
     private static int intsCompare(int int1, int int2) {

@@ -12,18 +12,20 @@ import java.nio.ByteOrder;
 public class OakWBufferImpl implements OakWBuffer {
 
     private final ByteBuffer bb;
+    private final GemmValueOperations operator;
 
-    OakWBufferImpl(ByteBuffer bb) {
+    OakWBufferImpl(ByteBuffer bb, GemmValueOperations operator) {
         this.bb = bb;
+        this.operator = operator;
     }
 
     private int valuePosition() {
-        return bb.position() + ValueUtils.VALUE_HEADER_SIZE;
+        return bb.position() + operator.getHeaderSize();
     }
 
     @Override
     public int capacity() {
-        return bb.remaining() - ValueUtils.VALUE_HEADER_SIZE;
+        return bb.remaining() - valuePosition();
     }
 
     @Override
