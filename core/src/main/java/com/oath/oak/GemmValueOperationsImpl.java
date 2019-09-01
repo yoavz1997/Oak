@@ -36,9 +36,9 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     private static Unsafe unsafe = UnsafeUtils.unsafe;
 
     private boolean CAS(Slice s, int expectedLock, int newLock, int generation) {
-        long expected = intsToLong(expectedLock, generation);
-        long value = intsToLong(newLock, generation);
-        return unsafe.compareAndSwapLong(null, ((DirectBuffer) s.getByteBuffer()).address(), reverseBytes(expected), reverseBytes(value));
+        long expected = intsToLong(generation, expectedLock);
+        long value = intsToLong(generation, newLock);
+        return unsafe.compareAndSwapLong(null, ((DirectBuffer) s.getByteBuffer()).address() + s.getByteBuffer().position(), reverseBytes(expected), reverseBytes(value));
     }
 
     @Override
@@ -82,7 +82,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
         memoryManager.releaseSlice(s);
         s = memoryManager.allocateSlice(capacity + getHeaderSize());
         putInt(s, 0, lookUp.generation);
-        putInt(s, GEMM_HEADER_SIZE, LOCKED.value);
+        putInt(s, getLockLocation(), LOCKED.value);
         int valueBlockAndLength = (s.getBlockID() << VALUE_BLOCK_SHIFT) | ((capacity + VALUE_HEADER_SIZE) & VALUE_LENGTH_MASK);
         assert chunk.longCasEntriesArray(lookUp.entryIndex, Chunk.OFFSET.VALUE_STATS, lookUp.valueStats, UnsafeUtils.intsToLong(valueBlockAndLength, s.getByteBuffer().position()));
         return s;
@@ -92,7 +92,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     public Result compute(Slice s, Consumer<OakWBuffer> computer, int generation) {
         Result result = lockWrite(s, generation);
         if (result != TRUE) return result;
-        computer.accept(new OakWBufferImpl(s.getByteBuffer(), instance));
+        computer.accept(new OakWBufferImpl(s, instance));
         unlockWrite(s);
         return TRUE;
     }
@@ -160,9 +160,9 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
             int oldGeneration = getInt(s, 0);
             if (oldGeneration != generation) return Result.RETRY;
             lockState = getInt(s, GEMM_HEADER_SIZE);
-            lockState &= ~LOCK_MASK;
             if (oldGeneration != getInt(s, 0)) return Result.RETRY;
             if (!isValueThere(lockState)) return Result.FALSE;
+            lockState &= ~LOCK_MASK;
         } while (!CAS(s, lockState, lockState + (1 << LOCK_SHIFT), generation));
         return TRUE;
     }

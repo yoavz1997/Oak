@@ -77,7 +77,7 @@ public class Chunk<K, V> {
 
     // when chunk is frozen, all of the elements in pending puts array will be this OpData
     private static final OpData FROZEN_OP_DATA =
-            new OpData(Operation.NO_OP, 0, 0, 0, null);
+            new OpData(Operation.NO_OP, 0, 0, 0, null, -1);
 
     // defaults
     public static final int MAX_ITEMS_DEFAULT = 4096;
@@ -160,13 +160,15 @@ public class Chunk<K, V> {
         final long newValueStats;
         long oldValueStats;
         final Consumer<OakWBuffer> computer;
+        final int generation;
 
-        OpData(Operation op, int entryIndex, long newValueStats, long oldValueStats, Consumer<OakWBuffer> computer) {
+        OpData(Operation op, int entryIndex, long newValueStats, long oldValueStats, Consumer<OakWBuffer> computer, int generation) {
             this.op = op;
             this.entryIndex = entryIndex;
             this.newValueStats = newValueStats;
             this.oldValueStats = oldValueStats;
             this.computer = computer;
+            this.generation = generation;
         }
     }
 
@@ -205,7 +207,7 @@ public class Chunk<K, V> {
      **/
     private void writeKey(K key, int ei) {
         int keySize = keySerializer.calculateSize(key);
-        Slice s = memoryManager.allocateSlice(keySize);
+        Slice s = memoryManager.allocateSliceForKeys(keySize);
         // byteBuffer.slice() is set so it protects us from the overwrites of the serializer
         keySerializer.serialize(key, s.getByteBuffer().slice());
 
@@ -369,19 +371,19 @@ public class Chunk<K, V> {
                 // if keys are equal - we've found the item
             else if (cmp == 0) {
                 long valueStats = getValueStats(curr);
-                // Busy-wait until the generation is set
-                while (currGen == INVALID_GENERATION) {
-                    currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
-                }
                 Slice valueSlice = buildValueSlice(valueStats);
                 if (valueSlice == null) {
                     assert valueStats == 0;
                     return new LookUp(null, valueStats, curr, INVALID_GENERATION);
                 }
-                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, curr);
+                // Busy-wait until the generation is set
+                while (currGen == INVALID_GENERATION) {
+                    currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
+                }
+                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, currGen);
                 if (result == TRUE) return new LookUp(null, valueStats, curr, currGen);
                 else if (result == RETRY) return lookUp(key);
-                new LookUp(valueSlice, valueStats, curr, currGen);
+                return new LookUp(valueSlice, valueStats, curr, currGen);
             }
             // otherwise- proceed to next item
             else {
@@ -488,6 +490,7 @@ public class Chunk<K, V> {
         // key and value must be set before linking to the list so it will make sense when reached before put is done
         setEntryField(ei, OFFSET.VALUE_POSITION, 0); // set value index to -1, value is init to null
         setEntryField(ei, OFFSET.VALUE_BLOCK_AND_LENGTH, 0); // set value index to -1, value is init to null
+        setEntryField(ei, OFFSET.VALUE_GENERATION, -1);
         writeKey(key, ei);
         return ei;
     }
@@ -560,11 +563,12 @@ public class Chunk<K, V> {
     /**
      * write value in place
      **/
-    long writeValueOffHeap(V value) {
+    long writeValueOffHeap(V value, int[] generation) {
         int valueLength = valueSerializer.calculateSize(value) + operator.getLockLocation();
         Slice slice = memoryManager.allocateSlice(valueLength);
+        generation[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock
-        slice.getByteBuffer().putInt(slice.getByteBuffer().position(), 0);
+        slice.getByteBuffer().putInt(slice.getByteBuffer().position() + operator.getLockLocation(), 0);
         // just allocated byte buffer is ensured to have position 0
         // One duplication
         valueSerializer.serialize(value, operator.getActualValueThreadSafe(slice));
@@ -587,6 +591,7 @@ public class Chunk<K, V> {
 
         // try to perform the CAS according to operation data (opData)
         if (pointToValueCAS(opData, true)) {
+            setEntryField(opData.entryIndex, OFFSET.VALUE_GENERATION, opData.generation);
             return DELETED_VALUE;
         }
 

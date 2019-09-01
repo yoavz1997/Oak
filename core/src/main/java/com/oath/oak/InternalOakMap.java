@@ -347,8 +347,10 @@ class InternalOakMap<K, V> {
             ei = c.allocateEntryAndKey(key);
             if (ei == -1) {
                 rebalance(c);
-                put(key, value, transformer);
-                return null;
+                return put(key, value, transformer);
+                // TODO: seems wrong
+//                put(key, value, transformer);
+//                return null;
             }
             int prevEi = c.linkEntry(ei, true, key);
             if (prevEi != ei) {
@@ -357,9 +359,13 @@ class InternalOakMap<K, V> {
             }
         }
 
-        long newValueStats = c.writeValueOffHeap(value); // write value in place
+        int[] generation = new int[1];
+        long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
 
-        Chunk.OpData opData = new Chunk.OpData(Operation.PUT, ei, newValueStats, oldStats, null);
+        int currGen = c.getGeneration(ei);
+        while (currGen != INVALID_GENERATION)
+            currGen = c.getGeneration(ei);
+        Chunk.OpData opData = new Chunk.OpData(Operation.PUT, ei, newValueStats, oldStats, null, generation[0]);
 
         // publish put
         if (!c.publish()) {
@@ -437,9 +443,12 @@ class InternalOakMap<K, V> {
             }
         }
 
-        long newValueStats = c.writeValueOffHeap(value); // write value in place
-
-        Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, newValueStats, oldStats, null);
+        int[] generation = new int[1];
+        long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+        int currGen = c.getGeneration(ei);
+        while (currGen != INVALID_GENERATION)
+            currGen = c.getGeneration(ei);
+        Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, newValueStats, oldStats, null, generation[0]);
 
         // publish put
         if (!c.publish()) {
@@ -457,7 +466,7 @@ class InternalOakMap<K, V> {
         if (result == DELETED_VALUE)
             return Result.withValue(null);
         // busy-wait until the generation is set
-        int currGen = c.getGeneration(ei);
+        currGen = c.getGeneration(ei);
         while (currGen == INVALID_GENERATION)
             currGen = c.getGeneration(ei);
         AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(result), transformer, currGen);
@@ -540,9 +549,13 @@ class InternalOakMap<K, V> {
             }
         }
 
-        long newValueStats = c.writeValueOffHeap(value); // write value in place
+        int[] generation = new int[1];
+        long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
 
-        Chunk.OpData opData = new Chunk.OpData(Operation.COMPUTE, ei, newValueStats, oldStats, computer);
+        int currGen = c.getGeneration(ei);
+        while (currGen != INVALID_GENERATION)
+            currGen = c.getGeneration(ei);
+        Chunk.OpData opData = new Chunk.OpData(Operation.COMPUTE, ei, newValueStats, oldStats, computer, generation[0]);
 
         // publish put
         if (!c.publish()) {
@@ -619,7 +632,7 @@ class InternalOakMap<K, V> {
 
             assert lookUp.entryIndex > 0;
             assert lookUp.valueStats > 0;
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null);
+            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null, -1);
 
             // publish
             if (!c.publish()) {
