@@ -286,7 +286,7 @@ class InternalOakMap<K, V> {
         return result.success;
     }
 
-    // Returns old handle if someone helped before pointToValue happened, or null if
+    // Returns old handle if someone helped before pointToValue happened, or null otherwise
     private Handle finishAfterPublishing(Chunk.OpData opData, Chunk<K, V> c) {
         // set pointer to value
         Handle oldHandle = c.pointToValue(opData);
@@ -399,13 +399,17 @@ class InternalOakMap<K, V> {
 
         int ei = -1;
         int prevHi = -1;
+
+        // Is there already an entry associated with this key?
         if (lookUp != null) {
+            // There's an entry for this key, but it isn't linked to any handle (in which case prevHi will be < 0) or it's linked to a deleted handle that will then be indexed in prevHi (which will be > 0)
             assert lookUp.handle == null;
             ei = lookUp.entryIndex;
             assert ei > 0;
             prevHi = lookUp.handleIndex;
         }
 
+        // TODO - this can be the else clause of the previous if
         if (ei == -1) {
             ei = c.allocateEntryAndKey(key);
             if (ei == -1) {
@@ -414,7 +418,7 @@ class InternalOakMap<K, V> {
             }
             int prevEi = c.linkEntry(ei, true, key);
             if (prevEi != ei) {
-
+                // something changed this entry right before we linked it.
                 prevHi = c.getHandleIndex(prevEi);
                 if (prevHi != -1 ) {
                     if (transformer == null) return Result.withFlag(false);
@@ -433,6 +437,7 @@ class InternalOakMap<K, V> {
 
         c.writeValue(hi, value); // write value in place
 
+        // prevHi < 0 here iff a removal occurred right before we tried to link the new entry
         Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, hi, prevHi, null);
 
         // publish put
@@ -443,12 +448,18 @@ class InternalOakMap<K, V> {
         }
 
         Handle oldHandle = finishAfterPublishing(opData, c);
+
+        // Keep result before freeing old handle (otherwise we may incorrectly return null for a deleted handle)
+        Result result;
+        if (transformer == null)
+            result = Result.withFlag(oldHandle == null);
+        else
+            result = Result.withValue((oldHandle != null) ? oldHandle.transform(transformer) : null);
+
         if (oldHandle != null) {
             c.freeHandle(hi);
         }
-
-        if (transformer == null) return Result.withFlag(oldHandle == null);
-        return Result.withValue((oldHandle != null) ? oldHandle.transform(transformer) : null);
+        return result;
     }
 
 
@@ -546,36 +557,39 @@ class InternalOakMap<K, V> {
             throw new NullPointerException();
         }
 
-        boolean logical = true; // when logical is false, means we have marked the handle as deleted
+        // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may still be linked!
+        boolean logicallyDeleted = false;
         Handle prev = null;
         V v = null;
 
         while (true) {
-
             Chunk c = findChunk(key); // find chunk matching key
             Chunk.LookUp lookUp = c.lookUp(key);
-            if (lookUp != null && logical) {
-                prev = lookUp.handle; // remember previous handle
-            }
-            if (!logical && lookUp != null && prev != lookUp.handle) {
-                return v;  // someone else used this entry
-            }
 
             if (lookUp == null || lookUp.handle == null) {
-                return v; // there is no such key
+                // There is no such key. If we did logical deletion and someone else did the physical deletion,
+                // then the old value is saved in v. Otherwise v is (correctly) null
+                return v;
             }
 
-            if (logical) {
-                // we have marked this handle as deleted (successful remove)
+            if (logicallyDeleted) {
+                // This is the case where we logically deleted this entry (marked the handle as deleted), but someone reused
+                // the entry before we unlinked it. We have the previous value saved in v.
+                return v;
+            } else {
                 V vv = (transformer != null) ? (V) lookUp.handle.transform(transformer) : null;
 
-                if (oldValue != null && !oldValue.equals(vv))
-                    return null;
-
-                if (!lookUp.handle.remove(memoryManager)) {
-                    // we didn't succeed to remove the handle was marked as deleted already
+                if (oldValue != null && !oldValue.equals(vv)) {
+                    // this is not the droid you're looking for
                     return null;
                 }
+
+                if (!lookUp.handle.remove(memoryManager)) {
+                    // we didn't succeed to remove the handle (it was marked as deleted already by someone else)
+                    return null;
+                }
+                // we have marked this handle as deleted (successful remove)
+                logicallyDeleted = true;
                 v = vv;
             }
 
@@ -585,12 +599,10 @@ class InternalOakMap<K, V> {
             if (state == Chunk.State.INFANT) {
                 // the infant is already connected so rebalancer won't add this put
                 rebalance(c.creator());
-                logical = false;
                 continue;
             }
             if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
                 if (!rebalanceRemove(c, key)) {
-                    logical = false;
                     continue;
                 }
                 return v;
@@ -604,7 +616,6 @@ class InternalOakMap<K, V> {
             // publish
             if (!c.publish()) {
                 if (!rebalanceRemove(c, key)) {
-                    logical = false;
                     continue;
                 }
                 return v;

@@ -381,6 +381,7 @@ public class Chunk<K, V> {
      * @return result of CAS
      **/
     boolean publish() {
+        // TODO (eranmeir) we should probably rename this. It isn't really publishing, more like sempahore acquisition
         pendingOps.incrementAndGet();
         State currentState = state.get();
         if (currentState == State.FROZEN || currentState == State.RELEASED) {
@@ -520,7 +521,8 @@ public class Chunk<K, V> {
         Operation operation = opData.op;
 
         // the operation is remove, means we tried to change the handle index we knew about to -1
-        // the old handle index is no longer there so we have nothing to do
+        // the old handle index is no longer there so we have nothing to do. Note that in case of non-ZC removal the
+        // loop in remove() will lookup the key again so we will still return the previous value
         if (operation == Operation.REMOVE) {
             return null; // this is a remove, no need to try again and return doesn't matter
         }
@@ -529,9 +531,7 @@ public class Chunk<K, V> {
         int expectedHandleIdx = opData.handleIndex;
         int foundHandleIdx = getEntryField(opData.entryIndex, OFFSET_HANDLE_INDEX);
 
-        if (foundHandleIdx == expectedHandleIdx) {
-            return null; // someone helped
-        } else if (foundHandleIdx < 0) {
+        if (foundHandleIdx < 0) {
             // the handle was deleted, retry the attach
             opData.prevHandleIndex = -1;
             return pointToValue(opData); // remove completed, try again
