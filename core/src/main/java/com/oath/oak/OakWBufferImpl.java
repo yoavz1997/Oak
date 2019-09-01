@@ -11,11 +11,13 @@ import java.nio.ByteOrder;
 
 public class OakWBufferImpl implements OakWBuffer {
 
-    private final ByteBuffer bb;
+    private Slice s;
+    private ByteBuffer bb;
     private final GemmValueOperations operator;
 
-    OakWBufferImpl(ByteBuffer bb, GemmValueOperations operator) {
-        this.bb = bb;
+    OakWBufferImpl(Slice s, GemmValueOperations operator) {
+        this.s = s;
+        this.bb = s.getByteBuffer();
         this.operator = operator;
     }
 
@@ -26,11 +28,6 @@ public class OakWBufferImpl implements OakWBuffer {
     @Override
     public int capacity() {
         return bb.remaining() - valuePosition();
-    }
-
-    @Override
-    public ByteBuffer getByteBuffer() {
-        return bb;
     }
 
     @Override
