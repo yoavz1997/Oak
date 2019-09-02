@@ -129,12 +129,17 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
 
     @Override
     public int getHeaderSize() {
-        return VALUE_HEADER_SIZE + getLockLocation();
+        return getLockSize() + getLockLocation();
     }
 
     @Override
     public int getLockLocation() {
         return GEMM_HEADER_SIZE;
+    }
+
+    @Override
+    public int getLockSize() {
+        return VALUE_HEADER_SIZE;
     }
 
     @Override

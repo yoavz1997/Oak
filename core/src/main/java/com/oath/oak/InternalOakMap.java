@@ -362,9 +362,7 @@ class InternalOakMap<K, V> {
         int[] generation = new int[1];
         long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
 
-        int currGen = c.getGeneration(ei);
-        while (currGen != INVALID_GENERATION)
-            currGen = c.getGeneration(ei);
+        c.waitForGenToBe(ei, false);
         Chunk.OpData opData = new Chunk.OpData(Operation.PUT, ei, newValueStats, oldStats, null, generation[0]);
 
         // publish put
@@ -988,16 +986,12 @@ class InternalOakMap<K, V> {
             }
 
             ByteBuffer bb = state.getChunk().readKey(state.getIndex()).slice();
-            Slice currentValue = null;
-            int currGen = INVALID_GENERATION;
+            Map.Entry<Slice, Integer> value = null;
             if (needsValue) {
-                currGen = state.getChunk().getGeneration(state.getIndex());
-                while (currGen == INVALID_GENERATION)
-                    currGen = state.getChunk().getGeneration(state.getIndex());
-                currentValue = state.getChunk().getValueSlice(state.getIndex());
+                value = state.getChunk().getConsistentValueFromEntry(state.getIndex());
             }
             advanceState();
-            return new AbstractMap.SimpleImmutableEntry<>(bb, new AbstractMap.SimpleImmutableEntry<>(currentValue, currGen));
+            return new AbstractMap.SimpleImmutableEntry<>(bb, value);
         }
 
         private void initState(boolean isDescending, K lowerBound, boolean lowerInclusive,

@@ -40,7 +40,8 @@ public class GemmAllocator implements Closeable {
     }
 
     Slice allocateSlice(int size) {
-        Slice s = manager.allocateSlice(size + GEMM_HEADER_SIZE);
+        Slice s = manager.allocateSlice(size);
+        assert s.getByteBuffer().remaining() == size;
         s.getByteBuffer().putInt(s.getByteBuffer().position(), getCurrentGeneration());
         return s;
     }
@@ -51,7 +52,9 @@ public class GemmAllocator implements Closeable {
         myReleaseList.add(s);
         if (myReleaseList.size() >= RELEASE_LIST_LIMIT) {
             globalGemmNumber.incrementAndGet();
-            myReleaseList.forEach(manager::freeSlice);
+            for (Slice releasedSlice : myReleaseList) {
+                manager.freeSlice(releasedSlice);
+            }
             myReleaseList.clear();
         }
     }
@@ -61,10 +64,10 @@ public class GemmAllocator implements Closeable {
     }
 
     ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength + GEMM_HEADER_SIZE);
+        return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength);
     }
 
-    Slice allocateSliceForKeys(int size) {
-        return manager.allocateSlice(size);
+    boolean verifyGeneration(Slice s, int generation) {
+        return s.getByteBuffer().getInt(s.getByteBuffer().position()) == generation;
     }
 }

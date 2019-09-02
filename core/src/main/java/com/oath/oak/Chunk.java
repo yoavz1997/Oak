@@ -8,12 +8,10 @@ package com.oath.oak;
 
 import sun.misc.Unsafe;
 
+import java.beans.PropertyEditorSupport;
 import java.lang.reflect.Constructor;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.EmptyStackException;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
@@ -207,7 +205,7 @@ public class Chunk<K, V> {
      **/
     private void writeKey(K key, int ei) {
         int keySize = keySerializer.calculateSize(key);
-        Slice s = memoryManager.allocateSliceForKeys(keySize);
+        Slice s = memoryManager.allocateSlice(keySize);
         // byteBuffer.slice() is set so it protects us from the overwrites of the serializer
         keySerializer.serialize(key, s.getByteBuffer().slice());
 
@@ -351,6 +349,40 @@ public class Chunk<K, V> {
         return UnsafeUtils.intsToLong(valueBlockAndLength, valuePosition);
     }
 
+    int waitForGenToBe(int entryIndex, boolean valid) {
+        int currGen = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+        if (valid)
+            while (currGen == INVALID_GENERATION) {
+                currGen = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+            }
+        else
+            while (currGen != INVALID_GENERATION) {
+                currGen = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+            }
+        return currGen;
+    }
+
+    Map.Entry<Slice, Integer> getConsistentValueFromEntry(int entryIndex) {
+        while (true) {
+            Slice value = getValueSlice(entryIndex);
+            Integer result = checkValueConsistency(entryIndex, value);
+            if (result != null) return new AbstractMap.SimpleImmutableEntry<>(value, result);
+        }
+    }
+
+    private Integer checkValueConsistency(int entryIndex, Slice value) {
+        int entryGen;
+        if (value == null) {
+            waitForGenToBe(entryIndex, false);
+            return INVALID_GENERATION;
+        } else {
+            entryGen = waitForGenToBe(entryIndex, true);
+            if (memoryManager.verifyGeneration(value, entryGen))
+                return entryGen;
+        }
+        return null;
+    }
+
     /**
      * look up key
      */
@@ -358,7 +390,6 @@ public class Chunk<K, V> {
         // binary search sorted part of key array to quickly find node to start search at
         // it finds previous-to-key so start with its next
         int curr = getEntryField(binaryFind(key), OFFSET.NEXT);
-        int currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
         int cmp;
         // iterate until end of list (or key is found)
         while (curr != NONE) {
@@ -372,24 +403,20 @@ public class Chunk<K, V> {
             else if (cmp == 0) {
                 long valueStats = getValueStats(curr);
                 Slice valueSlice = buildValueSlice(valueStats);
+                Integer checkResult = checkValueConsistency(curr, valueSlice);
+                if (checkResult == null) return lookUp(key);
                 if (valueSlice == null) {
                     assert valueStats == 0;
                     return new LookUp(null, valueStats, curr, INVALID_GENERATION);
                 }
-                // Busy-wait until the generation is set
-                while (currGen == INVALID_GENERATION) {
-                    currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
-                }
-                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, currGen);
-                if (result == TRUE) return new LookUp(null, valueStats, curr, currGen);
+                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, checkResult);
+                if (result == TRUE) return new LookUp(null, valueStats, curr, checkResult);
                 else if (result == RETRY) return lookUp(key);
-                return new LookUp(valueSlice, valueStats, curr, currGen);
+                return new LookUp(valueSlice, valueStats, curr, checkResult);
             }
             // otherwise- proceed to next item
-            else {
+            else
                 curr = getEntryField(curr, OFFSET.NEXT);
-                currGen = getEntryField(curr, OFFSET.VALUE_GENERATION);
-            }
         }
         return null;
     }
@@ -564,13 +591,14 @@ public class Chunk<K, V> {
      * write value in place
      **/
     long writeValueOffHeap(V value, int[] generation) {
-        int valueLength = valueSerializer.calculateSize(value) + operator.getLockLocation();
+        int valueLength = valueSerializer.calculateSize(value) + operator.getHeaderSize();
         Slice slice = memoryManager.allocateSlice(valueLength);
         generation[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock
         slice.getByteBuffer().putInt(slice.getByteBuffer().position() + operator.getLockLocation(), 0);
         // just allocated byte buffer is ensured to have position 0
         // One duplication
+        assert slice.getByteBuffer().remaining() == valueLength;
         valueSerializer.serialize(value, operator.getActualValueThreadSafe(slice));
         int valueBlockAndLength = (slice.getBlockID() << VALUE_BLOCK_SHIFT) | (valueLength & VALUE_LENGTH_MASK);
         return UnsafeUtils.intsToLong(valueBlockAndLength, slice.getByteBuffer().position());
@@ -619,11 +647,13 @@ public class Chunk<K, V> {
         } else if (operation == Operation.PUT_IF_ABSENT) {
             return foundValueStats; // too late
         } else if (operation == Operation.COMPUTE) {
-            int currGen = getGeneration(opData.entryIndex);
-            while (currGen == INVALID_GENERATION)
-                currGen = getGeneration(opData.entryIndex);
             Slice valueSlice = buildValueSlice(foundValueStats);
-            GemmValueUtils.Result succ = operator.compute(valueSlice, opData.computer, currGen);
+            Integer checkResult = checkValueConsistency(opData.entryIndex, valueSlice);
+            if (checkResult == null) {
+                opData.oldValueStats = foundValueStats;
+                return pointToValue(opData);
+            }
+            GemmValueUtils.Result succ = operator.compute(valueSlice, opData.computer, checkResult);
             if (succ != TRUE) {
                 // we tried to perform the compute but the value was deleted/moved,
                 // we can get to pointToValue with Operation.COMPUTE only from PIACIP

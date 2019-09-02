@@ -11,6 +11,8 @@ public interface GemmValueUtils {
 
     int getLockLocation();
 
+    int getLockSize();
+
     ByteBuffer getActualValueThreadSafe(Slice s);
 
     ByteBuffer getActualValue(Slice s);

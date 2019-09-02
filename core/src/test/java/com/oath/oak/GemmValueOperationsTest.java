@@ -22,7 +22,7 @@ public class GemmValueOperationsTest {
     @Before
     public void init() {
         gemmAllocator = new GemmAllocator(new OakNativeMemoryAllocator(128));
-        s = gemmAllocator.allocateSlice(16);
+        s = gemmAllocator.allocateSlice(20);
         putInt(0, 0);
         putInt(operator.getLockLocation(), 0);
     }
