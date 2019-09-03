@@ -37,7 +37,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     @Override
     public int capacity() {
         start();
-        int capacity = bb.remaining() - valuePosition();
+        int capacity = bb.remaining() - operator.getHeaderSize();
         end();
         return capacity;
     }

@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class GemmAllocator implements Closeable {
     static final int RELEASE_LIST_LIMIT = 1024;
     static final int GEMM_HEADER_SIZE = 4;
-    public static final int INVALID_GENERATION = -1;
+    static final int INVALID_GENERATION = -1;
     private ThreadIndexCalculator threadIndexCalculator;
     private List<List<Slice>> releaseLists;
     private AtomicInteger globalGemmNumber;
@@ -60,7 +60,7 @@ public class GemmAllocator implements Closeable {
     }
 
     Slice getSliceFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return new Slice(BlockID, getByteBufferFromBlockID(BlockID, bufferPosition, bufferLength));
+        return new Slice(BlockID, getByteBufferFromBlockID(BlockID, bufferPosition, bufferLength).duplicate());
     }
 
     ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {

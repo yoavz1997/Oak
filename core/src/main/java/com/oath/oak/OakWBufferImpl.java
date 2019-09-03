@@ -27,7 +27,7 @@ public class OakWBufferImpl implements OakWBuffer {
 
     @Override
     public int capacity() {
-        return bb.remaining() - valuePosition();
+        return bb.remaining() - operator.getHeaderSize();
     }
 
     @Override
