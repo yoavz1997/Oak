@@ -163,11 +163,11 @@ public class Test {
 	 */
 	private void execute(int milliseconds, boolean maint)
 			throws InterruptedException {
-		long startTime;
-		fill(Parameters.range, Parameters.size);
-
-		System.out.println("Initialization complete. ");
-
+		long startTime = System.currentTimeMillis();
+		double count = fill(Parameters.range, Parameters.size);
+		double initTime = ((double) (System.currentTimeMillis() - startTime)) / 1000.0;
+		System.out.println("Initialization complete in (s) " + initTime + " operations " + count);
+		
 		Thread.sleep(5000);
 		startTime = System.currentTimeMillis();
 		for (Thread thread : threads)
