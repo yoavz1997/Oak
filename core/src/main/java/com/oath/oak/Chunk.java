@@ -349,17 +349,33 @@ public class Chunk<K, V> {
         return UnsafeUtils.intsToLong(valueBlockAndLength, valuePosition);
     }
 
-    int waitForGenToBe(int entryIndex, boolean valid) {
-        int currGen = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+    int waitForGenToBeInvalid(int entryIndex) {
+        return waitForGenToBe(entryIndex, false);
+    }
+
+    int waitForGenToBeValid(int entryIndex) {
+        return waitForGenToBe(entryIndex, true);
+    }
+
+    private void readGenAndValue(int entryIndex, int[] results) {
+        do {
+            results[0] = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+            results[1] = getEntryField(entryIndex, OFFSET.VALUE_BLOCK);
+        } while (results[0] != getEntryField(entryIndex, OFFSET.VALUE_GENERATION));
+    }
+
+    private int waitForGenToBe(int entryIndex, boolean valid) {
+        int[] results = new int[2];
+        readGenAndValue(entryIndex, results);
         if (valid)
-            while (currGen == INVALID_GENERATION) {
-                currGen = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+            while (results[0] == INVALID_GENERATION && results[1] != INVALID_BLOCK_ID) {
+                readGenAndValue(entryIndex, results);
             }
         else
-            while (currGen != INVALID_GENERATION) {
-                currGen = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
+            while (results[0] != INVALID_GENERATION && results[1] == INVALID_BLOCK_ID) {
+                readGenAndValue(entryIndex, results);
             }
-        return currGen;
+        return results[0];
     }
 
     Map.Entry<Slice, Integer> getConsistentValueFromEntry(int entryIndex) {
@@ -373,10 +389,10 @@ public class Chunk<K, V> {
     private Integer checkValueConsistency(int entryIndex, Slice value) {
         int entryGen;
         if (value == null) {
-            waitForGenToBe(entryIndex, false);
+            waitForGenToBeInvalid(entryIndex);
             return INVALID_GENERATION;
         } else {
-            entryGen = waitForGenToBe(entryIndex, true);
+            entryGen = waitForGenToBeValid(entryIndex);
             if (memoryManager.verifyGeneration(value, entryGen))
                 return entryGen;
         }

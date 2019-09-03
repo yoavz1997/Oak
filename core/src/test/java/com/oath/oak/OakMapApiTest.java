@@ -153,7 +153,6 @@ public class OakMapApiTest {
         assertEquals(String.format("Max key should be %d", maxKey), maxKey, (int) oak.lastKey());
     }
 
-    @Ignore
     @Test
     public void replace() {
         int key = r.nextInt(), val1 = r.nextInt(), val2 = r.nextInt();
@@ -169,7 +168,7 @@ public class OakMapApiTest {
         /* Replace(K, V, V) */
         assertFalse("Replacing non-matching value should return false", oak.replace(key, val1, val2));
         assertTrue("Replacing non-matching value should return true", oak.replace(key, val2, val1));
-        assertEquals("Replacing existing key should replace the value", val1, (int) oak.get(key));
+        assertEquals("Replacing existing key should replace the value", val1, oak.get(key).intValue());
     }
 
     @Test
@@ -249,7 +248,6 @@ public class OakMapApiTest {
         assertEquals("putIfAbsent should not insert an item if mapping doesn't exist", 1, oak.size());
     }
 
-    @Ignore
     @Test
     public void computeIfPresent() {
         BiFunction<? super Integer, ? super Integer, ? extends Integer> func = (k, v) -> v * 2;

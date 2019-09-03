@@ -8,21 +8,14 @@ package com.oath.oak;
 
 
 import java.nio.ByteBuffer;
-import java.util.AbstractMap;
-import java.util.Comparator;
-import java.util.ConcurrentModificationException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
+import java.util.*;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static com.oath.oak.Chunk.*;
-import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
+import static com.oath.oak.Chunk.DELETED_VALUE;
 import static com.oath.oak.GemmValueUtils.Result.*;
 
 class InternalOakMap<K, V> {
@@ -362,7 +355,7 @@ class InternalOakMap<K, V> {
         int[] generation = new int[1];
         long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
 
-        c.waitForGenToBe(ei, false);
+        c.waitForGenToBeInvalid(ei);
         Chunk.OpData opData = new Chunk.OpData(Operation.PUT, ei, newValueStats, oldStats, null, generation[0]);
 
         // publish put
@@ -427,9 +420,7 @@ class InternalOakMap<K, V> {
                 oldStats = c.getValueStats(prevEi);
                 if (oldStats != 0) {
                     if (transformer == null) return Result.withFlag(false);
-                    int currGen = c.getGeneration(prevEi);
-                    while (currGen == INVALID_GENERATION)
-                        currGen = c.getGeneration(prevEi);
+                    int currGen = c.waitForGenToBeValid(ei);
                     AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(oldStats), transformer, currGen);
                     if (res.getKey() == TRUE)
                         return Result.withValue(res.getValue());
@@ -443,9 +434,7 @@ class InternalOakMap<K, V> {
 
         int[] generation = new int[1];
         long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
-        int currGen = c.getGeneration(ei);
-        while (currGen != INVALID_GENERATION)
-            currGen = c.getGeneration(ei);
+        c.waitForGenToBeInvalid(ei);
         Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, newValueStats, oldStats, null, generation[0]);
 
         // publish put
@@ -464,9 +453,7 @@ class InternalOakMap<K, V> {
         if (result == DELETED_VALUE)
             return Result.withValue(null);
         // busy-wait until the generation is set
-        currGen = c.getGeneration(ei);
-        while (currGen == INVALID_GENERATION)
-            currGen = c.getGeneration(ei);
+        int currGen = c.waitForGenToBeValid(ei);
         AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(result), transformer, currGen);
         // TODO: What should be done if the value was already deleted?
         if (res.getKey() != RETRY) {
@@ -530,9 +517,7 @@ class InternalOakMap<K, V> {
             if (prevEi != ei) {
                 oldStats = c.getValueStats(prevEi);
                 if (oldStats != 0) {
-                    int currGen = c.getGeneration(prevEi);
-                    while (currGen == INVALID_GENERATION)
-                        currGen = c.getGeneration(prevEi);
+                    int currGen = c.waitForGenToBeValid(prevEi);
                     GemmValueUtils.Result res = operator.compute(c.buildValueSlice(oldStats), computer, currGen);
                     if (res == TRUE) {
                         // compute was successful and handle wasn't found deleted; in case
@@ -550,9 +535,7 @@ class InternalOakMap<K, V> {
         int[] generation = new int[1];
         long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
 
-        int currGen = c.getGeneration(ei);
-        while (currGen != INVALID_GENERATION)
-            currGen = c.getGeneration(ei);
+        c.waitForGenToBeInvalid(ei);
         Chunk.OpData opData = new Chunk.OpData(Operation.COMPUTE, ei, newValueStats, oldStats, computer, generation[0]);
 
         // publish put
@@ -569,13 +552,8 @@ class InternalOakMap<K, V> {
     }
 
     V remove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
-        if (key == null) {
-            throw new NullPointerException();
-        }
-
         // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may still be linked!
         boolean logicallyDeleted = false;
-        Slice prev = null;
         V v = null;
 
         while (true) {
