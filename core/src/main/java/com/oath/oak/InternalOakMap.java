@@ -560,21 +560,22 @@ class InternalOakMap<K, V> {
         V v = null;
 
         while (true) {
+
             Chunk<K, V> c = findChunk(key); // find chunk matching key
             Chunk.LookUp<V> lookUp = c.lookUp(key);
-
             if (lookUp == null || lookUp.handle == null) {
                 // There is no such key. If we did logical deletion and someone else did the physical deletion,
                 // then the old value is saved in v. Otherwise v is (correctly) null
                 return v;
             }
 
+
             if (logicallyDeleted) {
                 // This is the case where we logically deleted this entry (marked the handle as deleted), but someone reused
                 // the entry before we unlinked it. We have the previous value saved in v.
                 return v;
             } else {
-                V vv = (transformer != null) ? (V) lookUp.handle.transform(transformer) : null;
+                V vv = (transformer != null) ? lookUp.handle.transform(transformer) : null;
 
                 if (oldValue != null && !oldValue.equals(vv)) {
                     // this is not the droid you're looking for
@@ -739,7 +740,11 @@ class InternalOakMap<K, V> {
 
     // encapsulates finding of the chunk in the skip list and later chunk list traversal
     private Chunk<K, V> findChunk(Object key) {
+<<<<<<< HEAD
         Chunk<K, V> c = skiplist.floorEntry(key).getValue();
+=======
+        Chunk<K,V> c = skiplist.floorEntry(key).getValue();
+>>>>>>> 7c69112718aefe668d6dd2858fb8f651b3220462
         c = iterateChunks(c, key);
         return c;
     }
