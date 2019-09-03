@@ -740,11 +740,8 @@ class InternalOakMap<K, V> {
 
     // encapsulates finding of the chunk in the skip list and later chunk list traversal
     private Chunk<K, V> findChunk(Object key) {
-<<<<<<< HEAD
+
         Chunk<K, V> c = skiplist.floorEntry(key).getValue();
-=======
-        Chunk<K,V> c = skiplist.floorEntry(key).getValue();
->>>>>>> 7c69112718aefe668d6dd2858fb8f651b3220462
         c = iterateChunks(c, key);
         return c;
     }
