@@ -8,7 +8,7 @@ public class DirectMemoryAllocator implements OakMemoryAllocator{
 
     }
 
-    public ByteBuffer allocate(int size) {
+    public ByteBuffer allocateByteBuffer(int size) {
         return ByteBuffer.allocateDirect(size);
     }
 

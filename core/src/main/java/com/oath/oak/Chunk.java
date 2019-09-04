@@ -337,7 +337,7 @@ public class Chunk<K, V> {
                 int hi = getEntryField(curr, OFFSET.VALUE_BUFFER);
                 if (hi < 0) return new LookUp(null, curr, -1);
                 Slice s = valueSlices[hi];
-                NovaValueUtils.Result result = operator.isValueDeleted(s, NovaValueUtils.NO_GENERATION);
+                NovaValueUtils.Result result = operator.isValueDeleted(s, NovaValueUtils.NO_VERSION);
                 if (result == TRUE) return new LookUp(null, curr, hi);
                 assert result == FALSE;
                 return new LookUp(s, curr, hi);
@@ -566,7 +566,7 @@ public class Chunk<K, V> {
         } else if (operation == Operation.COMPUTE) {
             Slice s = valueSlices[foundHandleIdx];
             if (s != null) {
-                NovaValueUtils.Result succ = operator.compute(s, opData.computer, NovaValueUtils.NO_GENERATION);
+                NovaValueUtils.Result succ = operator.compute(s, opData.computer, NovaValueUtils.NO_VERSION);
                 if (succ != TRUE) {
                     // we tried to perform the compute but the handle was deleted,
                     // we can get to pointToValue with Operation.COMPUTE only from PIACIP
@@ -669,7 +669,7 @@ public class Chunk<K, V> {
 
 
     public void freeSlice(int sliceIndex) {
-        operator.remove(valueSlices[sliceIndex], memoryManager, NovaValueUtils.NO_GENERATION);
+        operator.remove(valueSlices[sliceIndex], memoryManager, NovaValueUtils.NO_VERSION);
         valueSlices[sliceIndex] = null;
     }
 

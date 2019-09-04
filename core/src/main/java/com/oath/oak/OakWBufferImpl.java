@@ -8,23 +8,24 @@ package com.oath.oak;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.function.Function;
 
 public class OakWBufferImpl implements OakWBuffer {
 
     private final ByteBuffer bb;
+    private final NovaValueOperations operator;
 
-    OakWBufferImpl(ByteBuffer bb) {
+    OakWBufferImpl(ByteBuffer bb, NovaValueOperations operator) {
         this.bb = bb;
+        this.operator = operator;
     }
 
     private int valuePosition() {
-        return bb.position() + ValueUtils.VALUE_HEADER_SIZE;
+        return bb.position() + operator.getHeaderSize();
     }
 
     @Override
     public int capacity() {
-        return bb.remaining() - ValueUtils.VALUE_HEADER_SIZE;
+        return bb.remaining() - operator.getHeaderSize();
     }
 
     @Override

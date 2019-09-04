@@ -22,7 +22,7 @@ public class MemoryManager {
     }
 
     public ByteBuffer allocate(int size) {
-        return valuesMemoryAllocator.allocate(size);
+        return valuesMemoryAllocator.allocateByteBuffer(size);
     }
 
     public void close() {

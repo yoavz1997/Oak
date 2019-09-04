@@ -9,6 +9,7 @@ package com.oath.oak;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ConcurrentModificationException;
+import java.util.Map;
 import java.util.function.Function;
 
 // remove header
@@ -125,11 +126,12 @@ public class OakRValueBufferImpl implements OakRBuffer {
         if (transformer == null) {
             throw new NullPointerException();
         }
-        T retVal = ValueUtils.transform(bb, transformer);
-        if (retVal == null) {
+        Map.Entry<NovaValueUtils.Result, T> readResult = operator.transform(s, transformer, NovaValueUtils.NO_VERSION);
+        assert readResult.getKey() != NovaValueUtils.Result.RETRY;
+        if (readResult.getValue() == null) {
             throw new ConcurrentModificationException();
         }
-        return retVal;
+        return readResult.getValue();
     }
 
     @Override
@@ -137,12 +139,12 @@ public class OakRValueBufferImpl implements OakRBuffer {
         start();
         ByteBuffer dup = bb.duplicate();
         dup.position(dup.position() + operator.getHeaderSize());
-        ValueUtils.unsafeBufferToIntArrayCopy(dup, srcPosition, dstArray, countInts);
+        operator.unsafeBufferToIntArrayCopy(dup, srcPosition, dstArray, countInts);
         end();
     }
 
     private void start() {
-        NovaValueUtils.Result result = operator.lockRead(s, NovaValueUtils.NO_GENERATION);
+        NovaValueUtils.Result result = operator.lockRead(s, NovaValueUtils.NO_VERSION);
         if (result == NovaValueUtils.Result.FALSE)
             throw new ConcurrentModificationException();
         else if (result == NovaValueUtils.Result.RETRY)
@@ -150,7 +152,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     }
 
     private void end() {
-        operator.unlockRead(s, NovaValueUtils.NO_GENERATION);
+        operator.unlockRead(s, NovaValueUtils.NO_VERSION);
     }
 
 }

@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.oath.oak.NovaValueUtils.Result;
-import static com.oath.oak.NovaValueUtils.NO_GENERATION;
+import static com.oath.oak.NovaValueUtils.NO_VERSION;
 import static com.oath.oak.NovaValueUtils.Result.*;
 
 class InternalOakMap<K, V> {
@@ -311,7 +311,7 @@ class InternalOakMap<K, V> {
         if (lookUp != null && lookUp.valueSlice != null) {
             V v = null;
             if (transformer != null) {
-                Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+                Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_VERSION);
                 if (readResult.getKey() != TRUE) return put(key, value, transformer);
                 v = readResult.getValue();
             }
@@ -390,7 +390,7 @@ class InternalOakMap<K, V> {
         Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp != null && lookUp.valueSlice != null) {
             if (transformer == null) return ReturnValue.withFlag(false);
-            Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+            Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_VERSION);
             if (readResult.getKey() != TRUE) return putIfAbsent(key, value, transformer);
             return ReturnValue.withValue(readResult.getValue());
         }
@@ -434,7 +434,7 @@ class InternalOakMap<K, V> {
                 prevHi = c.getSliceIndex(prevEi);
                 if (prevHi != -1) {
                     if (transformer == null) return ReturnValue.withFlag(false);
-                    Map.Entry<Result, V> readResult = operator.transform(c.getSlice(prevEi), transformer, NO_GENERATION);
+                    Map.Entry<Result, V> readResult = operator.transform(c.getSlice(prevEi), transformer, NO_VERSION);
                     if (readResult.getKey() != TRUE) return putIfAbsent(key, value, transformer);
                     return ReturnValue.withValue(readResult.getValue());
                 } else {
@@ -469,7 +469,7 @@ class InternalOakMap<K, V> {
             returnValue = ReturnValue.withFlag(oldSlice == null);
         else {
             if (oldSlice != null) {
-                Map.Entry<Result, V> readResult = operator.transform(oldSlice, transformer, NO_GENERATION);
+                Map.Entry<Result, V> readResult = operator.transform(oldSlice, transformer, NO_VERSION);
                 if (readResult.getKey() != TRUE) throw new UnsupportedOperationException();
                 returnValue = ReturnValue.withValue(readResult.getValue());
             } else returnValue = ReturnValue.withValue(null);
@@ -491,7 +491,7 @@ class InternalOakMap<K, V> {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp != null && lookUp.valueSlice != null) {
-            Result result = operator.compute(lookUp.valueSlice, computer, NO_GENERATION);
+            Result result = operator.compute(lookUp.valueSlice, computer, NO_VERSION);
             if (result == TRUE) {
                 // compute was successful and handle wasn't found deleted; in case
                 // this handle was already found as deleted, continue to construct another handle
@@ -534,7 +534,7 @@ class InternalOakMap<K, V> {
             if (prevEi != ei) {
                 prevHi = c.getSliceIndex(prevEi);
                 if (prevHi != -1) {
-                    Result result = operator.compute(c.getSlice(prevEi), computer, NO_GENERATION);
+                    Result result = operator.compute(c.getSlice(prevEi), computer, NO_VERSION);
                     if (result == TRUE) {
                         // compute was successful and handle wasn't found deleted; in case
                         // this handle was already found as deleted, continue to construct another handle
@@ -600,7 +600,7 @@ class InternalOakMap<K, V> {
             } else {
                 V vv = null;
                 if (transformer != null) {
-                    Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+                    Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_VERSION);
                     if (readResult.getKey() == RETRY) return remove(key, oldValue, transformer);
                     else if (readResult.getKey() == FALSE) {
                         // The value is already deleted
@@ -615,7 +615,7 @@ class InternalOakMap<K, V> {
                 }
 
                 //TODO: react to RETRY
-                if (operator.remove(lookUp.valueSlice, memoryManager, NO_GENERATION) == FALSE) {
+                if (operator.remove(lookUp.valueSlice, memoryManager, NO_VERSION) == FALSE) {
                     // we didn't succeed to remove the handle (it was marked as deleted already by someone else)
                     return null;
                 }
@@ -680,7 +680,7 @@ class InternalOakMap<K, V> {
             return null;
         }
 
-        Map.Entry<Result, T> result = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+        Map.Entry<Result, T> result = operator.transform(lookUp.valueSlice, transformer, NO_VERSION);
         if (result.getKey() == RETRY) return getValueTransformation(key, transformer);
         return result.getValue();
 
@@ -769,7 +769,7 @@ class InternalOakMap<K, V> {
         Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp == null || lookUp.valueSlice == null) return false;
 
-        Result result = operator.compute(lookUp.valueSlice, computer, NO_GENERATION);
+        Result result = operator.compute(lookUp.valueSlice, computer, NO_VERSION);
         if (result == RETRY) return computeIfPresent(key, computer);
         return result == TRUE;
     }
@@ -1113,7 +1113,7 @@ class InternalOakMap<K, V> {
                 return null;
             }
             //TODO: what about retries
-            return operator.transform(handle, transformer, NO_GENERATION).getValue();
+            return operator.transform(handle, transformer, NO_VERSION).getValue();
         }
     }
 
@@ -1153,13 +1153,13 @@ class InternalOakMap<K, V> {
             if (slice == null) {
                 return null;
             }
-            if (operator.lockRead(slice, NO_GENERATION) != TRUE)
+            if (operator.lockRead(slice, NO_VERSION) != TRUE)
                 return null;
             ByteBuffer serializedValue = operator.getActualValue(slice).asReadOnlyBuffer();
             Map.Entry<ByteBuffer, ByteBuffer> entry = new AbstractMap.SimpleEntry<>(serializedKey, serializedValue);
 
             T transformation = transformer.apply(entry);
-            operator.unlockRead(slice, NO_GENERATION);
+            operator.unlockRead(slice, NO_VERSION);
             return transformation;
         }
     }

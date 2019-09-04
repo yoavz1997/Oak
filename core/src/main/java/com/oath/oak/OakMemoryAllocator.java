@@ -16,7 +16,7 @@ import java.nio.ByteBuffer;
 public interface OakMemoryAllocator {
 
     // Allocates ByteBuffer of the given size, thread safe.
-    ByteBuffer allocate(int size);
+    ByteBuffer allocateByteBuffer(int size);
 
     // Releases ByteBuffer (makes it available for reuse) without other GC consideration.
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this

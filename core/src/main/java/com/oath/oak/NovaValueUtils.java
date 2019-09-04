@@ -7,7 +7,7 @@ public interface NovaValueUtils {
         TRUE, FALSE, RETRY
     }
 
-    int NO_GENERATION = -1;
+    int NO_VERSION = -1;
 
     int getHeaderSize();
 
@@ -15,21 +15,29 @@ public interface NovaValueUtils {
 
     int getLockSize();
 
-    ByteBuffer getActualValueThreadSafe(Slice s);
+    default ByteBuffer getActualValueThreadSafe(Slice s) {
+        ByteBuffer bb = s.getByteBuffer();
+        bb.position(bb.position() + getHeaderSize());
+        ByteBuffer dup = bb.slice();
+        bb.position(bb.position() - getHeaderSize());
+        return dup;
+    }
 
-    ByteBuffer getActualValue(Slice s);
+    default ByteBuffer getActualValue(Slice s) {
+        ByteBuffer dup = s.getByteBuffer().duplicate();
+        dup.position(dup.position() + getHeaderSize());
+        return dup.slice();
+    }
 
+    Result lockRead(Slice s, int version);
 
+    Result unlockRead(Slice s, int version);
 
-    Result lockRead(Slice s, int generation);
-
-    Result unlockRead(Slice s, int generation);
-
-    Result lockWrite(Slice s, int generation);
+    Result lockWrite(Slice s, int version);
 
     Result unlockWrite(Slice s);
 
-    Result deleteValue(Slice s, int generation);
+    Result deleteValue(Slice s, int version);
 
-    Result isValueDeleted(Slice s, int generation);
+    Result isValueDeleted(Slice s, int version);
 }

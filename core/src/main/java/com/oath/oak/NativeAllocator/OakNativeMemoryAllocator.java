@@ -88,27 +88,25 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     }
 
     @Override
-    public ByteBuffer allocate(int size) {
-        return allocate(size, true);
+    public ByteBuffer allocateByteBuffer(int size) {
+        return allocate(size).getByteBuffer();
     }
 
     // Allocates ByteBuffer of the given size, either from freeList or (if it is still possible)
     // within current block bounds.
     // Otherwise new block is allocated within Oak memory bounds. Thread safe.
-    private ByteBuffer allocate(int size, boolean reuseFreedMemory) {
+    private Slice allocate(int size) {
 
-        if (reuseFreedMemory) {
-            FreeChuck myDummy = dummies[threadIndexCalculator.getIndex()];
-            while (!freeList.isEmpty()) {
-                myDummy.length = size;
-                FreeChuck bestFit = freeList.higher(myDummy);
-                if (bestFit == null) break;
-                if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size))
-                    break;     // all remaining buffers are too big
-                if (freeList.remove(bestFit)) {
-                    if (stats != null) stats.allocate(size);
-                    return bestFit.slice.getByteBuffer();
-                }
+        FreeChuck myDummy = dummies[threadIndexCalculator.getIndex()];
+        while (!freeList.isEmpty()) {
+            myDummy.length = size;
+            FreeChuck bestFit = freeList.higher(myDummy);
+            if (bestFit == null) break;
+            if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size))
+                break;     // all remaining buffers are too big
+            if (freeList.remove(bestFit)) {
+                if (stats != null) stats.allocate(size);
+                return bestFit.slice;
             }
         }
 
@@ -139,16 +137,15 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
             }
         }
         allocated.addAndGet(size);
-        return bb;
+        return new Slice((idGenerator.get() - 1), bb);
     }
 
     // Allocates Slice, meaning it must be known from which block it is allocated.
     // Because currently the free list doesn't keeps block IDs for released values,
     // the free list is not used
     public Slice allocateSlice(int size) {
-        ByteBuffer bb = allocate(size, false);
         // idGenerator - 1 is the current block ID (as free list usage is disabled above)
-        return new Slice((idGenerator.get() - 1), bb);
+        return allocate(size);
     }
 
     // Releases memory (makes it available for reuse) without other GC consideration.

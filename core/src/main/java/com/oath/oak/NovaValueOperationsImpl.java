@@ -9,8 +9,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.oath.oak.NovaValueOperationsImpl.LockStates.*;
-import static com.oath.oak.NovaValueUtils.Result.RETRY;
-import static com.oath.oak.NovaValueUtils.Result.TRUE;
+import static com.oath.oak.NovaValueUtils.Result.*;
 import static java.lang.Integer.reverseBytes;
 
 public class NovaValueOperationsImpl implements NovaValueOperations {
@@ -27,6 +26,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     private static final int LOCK_MASK = 0x3;
     private static final int LOCK_SHIFT = 2;
     private static final int VALUE_HEADER_SIZE = 4;
+    private static final NovaValueOperations instance = new NovaValueOperationsImpl();
 
     private static Unsafe unsafe = UnsafeUtils.unsafe;
 
@@ -40,18 +40,18 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     @Override
-    public <T> AbstractMap.SimpleEntry<Result, T> transform(Slice s, Function<ByteBuffer, T> transformer, int generation) {
-        Result result = lockRead(s, generation);
+    public <T> AbstractMap.SimpleEntry<Result, T> transform(Slice s, Function<ByteBuffer, T> transformer, int version) {
+        Result result = lockRead(s, version);
         if (result != TRUE) return new AbstractMap.SimpleEntry<>(result, null);
 
         T transformation = transformer.apply(getActualValue(s).asReadOnlyBuffer());
-        unlockRead(s, generation);
+        unlockRead(s, version);
         return new AbstractMap.SimpleEntry<>(TRUE, transformation);
     }
 
     @Override
     public <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, MemoryManager memoryManager) {
-        Result result = lockWrite(lookUp.valueSlice, NO_GENERATION);
+        Result result = lockWrite(lookUp.valueSlice, NO_VERSION);
         if (result != TRUE) return result;
         Slice s = innerPut(chunk, lookUp, newVal, serializer, memoryManager);
         if (s == null) {
@@ -86,35 +86,57 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         s = memoryManager.allocateSlice(capacity + getHeaderSize());
         putInt(s, getLockLocation(), LOCKED.value);
         assert chunk.casSliceArray(lookUp.sliceIndex, lookUp.valueSlice, s);
-        memoryManager.releaseSlice(s);
+        releaseSlice(s, memoryManager);
         return s;
     }
 
     @Override
-    public Result compute(Slice s, Consumer<OakWBuffer> computer, int generation) {
-        return null;
+    public Result compute(Slice s, Consumer<OakWBuffer> computer, int version) {
+        Result result = lockWrite(s, version);
+        if (result != TRUE) return result;
+        computer.accept(new OakWBufferImpl(s.getByteBuffer(), instance));
+        unlockWrite(s);
+        return TRUE;
     }
 
     @Override
-    public Result remove(Slice s, MemoryManager memoryManager, int generation) {
-        return null;
+    public Result remove(Slice s, MemoryManager memoryManager, int version) {
+        Result result = deleteValue(s, version);
+        if (result != TRUE) return result;
+        releaseSlice(s, memoryManager);
+        return TRUE;
     }
 
     @Override
     public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, MemoryManager memoryManager) {
-        return null;
+        Result result = lockWrite(lookUp.valueSlice, NO_VERSION);
+        if (result != TRUE) return new AbstractMap.SimpleEntry<>(result, null);
+        V oldValue = valueDeserializeTransformer.apply(getActualValue(lookUp.valueSlice));
+        Slice s = innerPut(chunk, lookUp, value, serializer, memoryManager);
+        unlockWrite(s);
+        return new AbstractMap.SimpleEntry<>(TRUE, oldValue);
     }
 
     @Override
     public <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, MemoryManager memoryManager) {
-        return null;
+        Result result = lockWrite(lookUp.valueSlice, NO_VERSION);
+        if (result != TRUE) return result;
+        V oldValue = valueDeserializeTransformer.apply(getActualValue(lookUp.valueSlice));
+        if (!oldValue.equals(expected)) {
+            unlockWrite(lookUp.valueSlice);
+            return FALSE;
+        }
+        Slice s = innerPut(chunk, lookUp, value, serializer, memoryManager);
+        unlockWrite(s);
+        return TRUE;
     }
 
     @Override
     public void releaseSlice(Slice slice, MemoryManager memoryManager) {
         // In this case, we do not free the header, because we do not employ NOVA yet
-        slice.getByteBuffer().position(slice.getByteBuffer().position() + getHeaderSize());
-        memoryManager.releaseSlice(slice);
+        Slice dup = slice.duplicate();
+        dup.getByteBuffer().position(dup.getByteBuffer().position() + getHeaderSize());
+        memoryManager.releaseSlice(dup);
     }
 
     @Override
@@ -133,22 +155,19 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     @Override
-    public ByteBuffer getActualValueThreadSafe(Slice s) {
-        return null;
+    public Result lockRead(Slice s, int version) {
+        int lockState;
+        do {
+            lockState = getInt(s, getLockLocation());
+            if (lockState == DELETED.value) return FALSE;
+            if (lockState == MOVED.value) return RETRY;
+            lockState &= ~LOCK_MASK;
+        } while (!CASLock(s, lockState, lockState + (1 << LOCK_SHIFT)));
+        return TRUE;
     }
 
     @Override
-    public ByteBuffer getActualValue(Slice s) {
-        return null;
-    }
-
-    @Override
-    public Result lockRead(Slice s, int generation) {
-        return null;
-    }
-
-    @Override
-    public Result unlockRead(Slice s, int generation) {
+    public Result unlockRead(Slice s, int version) {
         int lockState;
         do {
             lockState = getInt(s, getLockLocation());
@@ -158,8 +177,14 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     @Override
-    public Result lockWrite(Slice s, int generation) {
-        return null;
+    public Result lockWrite(Slice s, int version) {
+        int lockState;
+        do {
+            lockState = getInt(s, getLockLocation());
+            if (lockState == DELETED.value) return FALSE;
+            if (lockState == MOVED.value) return RETRY;
+        } while (!CASLock(s, FREE.value, LOCKED.value));
+        return TRUE;
     }
 
     @Override
@@ -169,13 +194,22 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     @Override
-    public Result deleteValue(Slice s, int generation) {
-        return null;
+    public Result deleteValue(Slice s, int version) {
+        int lockState;
+        do {
+            lockState = getInt(s, getLockLocation());
+            if (lockState == DELETED.value) return FALSE;
+            if (lockState == MOVED.value) return RETRY;
+        } while (!CASLock(s, FREE.value, DELETED.value));
+        return TRUE;
     }
 
     @Override
-    public Result isValueDeleted(Slice s, int generation) {
-        return null;
+    public Result isValueDeleted(Slice s, int version) {
+        int lockState = getInt(s, getLockLocation());
+        if (lockState == DELETED.value) return TRUE;
+        if (lockState == MOVED.value) return RETRY;
+        return FALSE;
     }
 
     private int getInt(Slice s, int index) {
