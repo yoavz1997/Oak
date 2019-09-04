@@ -29,7 +29,7 @@ public class OakMemoryManagerTest {
         allocatedBytes = 0;
         valuesMemoryAllocator = mock(OakMemoryAllocator.class);
         keysMemoryAllocator = new OakNativeMemoryAllocator(128);
-        when(valuesMemoryAllocator.allocate(anyInt())).thenAnswer((Answer) invocation -> {
+        when(valuesMemoryAllocator.allocateByteBuffer(anyInt())).thenAnswer((Answer) invocation -> {
             int size = (int) invocation.getArguments()[0];
             allocatedBytes += size;
             return ByteBuffer.allocate(size);
