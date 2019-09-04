@@ -21,6 +21,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import static com.oath.oak.NovaValueUtils.Result;
+import static com.oath.oak.NovaValueUtils.NO_GENERATION;
+import static com.oath.oak.NovaValueUtils.Result.*;
+
 class InternalOakMap<K, V> {
 
     /*-------------- Members --------------*/
@@ -38,6 +42,7 @@ class InternalOakMap<K, V> {
     // OakMaps (including subMaps and Views) when all of the above are closed,
     // his map can be closed and memory released.
     private final AtomicInteger referenceCount = new AtomicInteger(1);
+    private final NovaValueOperations operator;
     /*-------------- Constructors --------------*/
 
     /**
@@ -52,7 +57,7 @@ class InternalOakMap<K, V> {
             MemoryManager memoryManager,
             int chunkMaxItems,
             int chunkBytesPerItem,
-            ThreadIndexCalculator threadIndexCalculator) {
+            ThreadIndexCalculator threadIndexCalculator, NovaValueOperations operator) {
 
         this.size = new AtomicInteger(0);
         this.memoryManager = memoryManager;
@@ -69,10 +74,11 @@ class InternalOakMap<K, V> {
         this.skiplist = new ConcurrentSkipListMap<>(this.comparator);
 
         Chunk<K, V> head = new Chunk<>(this.minKey, null, this.comparator, memoryManager, chunkMaxItems,
-                this.size, keySerializer, valueSerializer, threadIndexCalculator);
+                this.size, keySerializer, valueSerializer, threadIndexCalculator, operator);
         this.skiplist.put(head.minKey, head);    // add first chunk (head) into skiplist
         this.head = new AtomicReference<>(head);
         this.threadIndexCalculator = threadIndexCalculator;
+        this.operator = operator;
     }
 
     /*-------------- Closable --------------*/
@@ -145,7 +151,7 @@ class InternalOakMap<K, V> {
             return null;
         }
         Rebalancer<K, V> rebalancer = new Rebalancer<>(c, comparator, true, memoryManager, keySerializer,
-                valueSerializer, threadIndexCalculator);
+                valueSerializer, threadIndexCalculator, operator);
 
         rebalancer = rebalancer.engageChunks(); // maybe we encountered a different rebalancer
 
@@ -285,12 +291,12 @@ class InternalOakMap<K, V> {
     }
 
     // Returns old handle if someone helped before pointToValue happened, or null otherwise
-    private Handle<V> finishAfterPublishing(Chunk.OpData opData, Chunk<K, V> c) {
+    private Slice finishAfterPublishing(Chunk.OpData opData, Chunk<K, V> c) {
         // set pointer to value
-        Handle<V> oldHandle = c.pointToValue(opData);
+        Slice oldSlice = c.pointToValue(opData);
         c.unpublish();
         checkRebalance(c);
-        return oldHandle;
+        return oldSlice;
     }
 
     /*-------------- OakMap Methods --------------*/
@@ -301,10 +307,16 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp != null && lookUp.handle != null) {
-            V v = (transformer != null) ? (V) lookUp.handle.transform(transformer) : null;
-            lookUp.handle.put(value, valueSerializer, memoryManager);
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp != null && lookUp.valueSlice != null) {
+            V v = null;
+            if (transformer != null) {
+                Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+                if (readResult.getKey() != TRUE) return put(key, value, transformer);
+                v = readResult.getValue();
+            }
+            if (operator.put(c, lookUp, value, valueSerializer, memoryManager) != TRUE)
+                return put(key, value, transformer);
             return v;
         }
 
@@ -328,7 +340,7 @@ class InternalOakMap<K, V> {
         if (lookUp != null) {
             ei = lookUp.entryIndex;
             assert ei > 0;
-            prevHi = lookUp.handleIndex;
+            prevHi = lookUp.sliceIndex;
         }
 
         if (ei == -1) {
@@ -341,7 +353,7 @@ class InternalOakMap<K, V> {
             int prevEi = c.linkEntry(ei, true, key);
             if (prevEi != ei) {
                 ei = prevEi;
-                prevHi = c.getHandleIndex(prevEi);
+                prevHi = c.getSliceIndex(prevEi);
             }
         }
 
@@ -358,7 +370,7 @@ class InternalOakMap<K, V> {
 
         // publish put
         if (!c.publish()) {
-            c.freeHandle(hi);
+            c.freeSlice(hi);
             rebalance(c);
             put(key, value, transformer);
             return null;
@@ -369,16 +381,18 @@ class InternalOakMap<K, V> {
         return null;
     }
 
-    Result<V> putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
+    ReturnValue<V> putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
         if (key == null || value == null) {
             throw new NullPointerException();
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp != null && lookUp.handle != null) {
-            if (transformer == null) return Result.withFlag(false);
-            return Result.withValue(lookUp.handle.transform(transformer));
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp != null && lookUp.valueSlice != null) {
+            if (transformer == null) return ReturnValue.withFlag(false);
+            Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+            if (readResult.getKey() != TRUE) return putIfAbsent(key, value, transformer);
+            return ReturnValue.withValue(readResult.getValue());
         }
 
         // if chunk is frozen or infant, we can't add to it
@@ -401,10 +415,10 @@ class InternalOakMap<K, V> {
         // Is there already an entry associated with this key?
         if (lookUp != null) {
             // There's an entry for this key, but it isn't linked to any handle (in which case prevHi will be < 0) or it's linked to a deleted handle that will then be indexed in prevHi (which will be > 0)
-            assert lookUp.handle == null;
+            assert lookUp.valueSlice == null;
             ei = lookUp.entryIndex;
             assert ei > 0;
-            prevHi = lookUp.handleIndex;
+            prevHi = lookUp.sliceIndex;
         }
 
         // TODO - this can be the else clause of the previous if
@@ -417,10 +431,12 @@ class InternalOakMap<K, V> {
             int prevEi = c.linkEntry(ei, true, key);
             if (prevEi != ei) {
                 // something changed this entry right before we linked it.
-                prevHi = c.getHandleIndex(prevEi);
+                prevHi = c.getSliceIndex(prevEi);
                 if (prevHi != -1) {
-                    if (transformer == null) return Result.withFlag(false);
-                    return Result.withValue(c.getHandle(prevEi).transform(transformer));
+                    if (transformer == null) return ReturnValue.withFlag(false);
+                    Map.Entry<Result, V> readResult = operator.transform(c.getSlice(prevEi), transformer, NO_GENERATION);
+                    if (readResult.getKey() != TRUE) return putIfAbsent(key, value, transformer);
+                    return ReturnValue.withValue(readResult.getValue());
                 } else {
                     ei = prevEi;
                 }
@@ -440,24 +456,29 @@ class InternalOakMap<K, V> {
 
         // publish put
         if (!c.publish()) {
-            c.freeHandle(hi);
+            c.freeSlice(hi);
             rebalance(c);
             return putIfAbsent(key, value, transformer);
         }
 
-        Handle<V> oldHandle = finishAfterPublishing(opData, c);
+        Slice oldSlice = finishAfterPublishing(opData, c);
 
         // Keep result before freeing old handle (otherwise we may incorrectly return null for a deleted handle)
-        Result<V> result;
+        ReturnValue<V> returnValue;
         if (transformer == null)
-            result = Result.withFlag(oldHandle == null);
-        else
-            result = Result.withValue((oldHandle != null) ? oldHandle.transform(transformer) : null);
-
-        if (oldHandle != null) {
-            c.freeHandle(hi);
+            returnValue = ReturnValue.withFlag(oldSlice == null);
+        else {
+            if (oldSlice != null) {
+                Map.Entry<Result, V> readResult = operator.transform(oldSlice, transformer, NO_GENERATION);
+                if (readResult.getKey() != TRUE) throw new UnsupportedOperationException();
+                returnValue = ReturnValue.withValue(readResult.getValue());
+            } else returnValue = ReturnValue.withValue(null);
         }
-        return result;
+
+        if (oldSlice != null) {
+            c.freeSlice(hi);
+        }
+        return returnValue;
     }
 
 
@@ -468,13 +489,14 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp != null && lookUp.handle != null) {
-            if (lookUp.handle.compute(computer)) {
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp != null && lookUp.valueSlice != null) {
+            Result result = operator.compute(lookUp.valueSlice, computer, NO_GENERATION);
+            if (result == TRUE) {
                 // compute was successful and handle wasn't found deleted; in case
                 // this handle was already found as deleted, continue to construct another handle
                 return false;
-            }
+            } else if (result == RETRY) return putIfAbsentComputeIfPresent(key, value, computer);
         }
 
         // if chunk is frozen or infant, we can't add to it
@@ -499,7 +521,7 @@ class InternalOakMap<K, V> {
         if (lookUp != null) {
             ei = lookUp.entryIndex;
             assert ei > 0;
-            prevHi = lookUp.handleIndex;
+            prevHi = lookUp.sliceIndex;
         }
 
         if (ei == -1) {
@@ -510,13 +532,14 @@ class InternalOakMap<K, V> {
             }
             int prevEi = c.linkEntry(ei, true, key);
             if (prevEi != ei) {
-                prevHi = c.getHandleIndex(prevEi);
+                prevHi = c.getSliceIndex(prevEi);
                 if (prevHi != -1) {
-                    if (c.getHandle(prevEi).compute(computer)) {
+                    Result result = operator.compute(c.getSlice(prevEi), computer, NO_GENERATION);
+                    if (result == TRUE) {
                         // compute was successful and handle wasn't found deleted; in case
                         // this handle was already found as deleted, continue to construct another handle
                         return false;
-                    }
+                    } else if (result == RETRY) return putIfAbsentComputeIfPresent(key, value, computer);
                 } else {
                     ei = prevEi;
                 }
@@ -535,17 +558,17 @@ class InternalOakMap<K, V> {
 
         // publish put
         if (!c.publish()) {
-            c.freeHandle(hi);
+            c.freeSlice(hi);
             rebalance(c);
             return putIfAbsentComputeIfPresent(key, value, computer);
         }
 
-        Handle<V> ret = finishAfterPublishing(opData, c);
+        Slice ret = finishAfterPublishing(opData, c);
         if (ret == null) {
             return true;
         } else {
             // lost a race
-            c.freeHandle(hi);
+            c.freeSlice(hi);
             return false;
         }
     }
@@ -562,8 +585,8 @@ class InternalOakMap<K, V> {
         while (true) {
 
             Chunk<K, V> c = findChunk(key); // find chunk matching key
-            Chunk.LookUp<V> lookUp = c.lookUp(key);
-            if (lookUp == null || lookUp.handle == null) {
+            Chunk.LookUp lookUp = c.lookUp(key);
+            if (lookUp == null || lookUp.valueSlice == null) {
                 // There is no such key. If we did logical deletion and someone else did the physical deletion,
                 // then the old value is saved in v. Otherwise v is (correctly) null
                 return v;
@@ -575,14 +598,24 @@ class InternalOakMap<K, V> {
                 // the entry before we unlinked it. We have the previous value saved in v.
                 return v;
             } else {
-                V vv = (transformer != null) ? lookUp.handle.transform(transformer) : null;
+                V vv = null;
+                if (transformer != null) {
+                    Map.Entry<Result, V> readResult = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+                    if (readResult.getKey() == RETRY) return remove(key, oldValue, transformer);
+                    else if (readResult.getKey() == FALSE) {
+                        // The value is already deleted
+                        return null;
+                    }
+                    vv = readResult.getValue();
+                }
 
                 if (oldValue != null && !oldValue.equals(vv)) {
                     // this is not the droid you're looking for
                     return null;
                 }
 
-                if (!lookUp.handle.remove(memoryManager)) {
+                //TODO: react to RETRY
+                if (operator.remove(lookUp.valueSlice, memoryManager, NO_GENERATION) == FALSE) {
                     // we didn't succeed to remove the handle (it was marked as deleted already by someone else)
                     return null;
                 }
@@ -608,8 +641,8 @@ class InternalOakMap<K, V> {
 
 
             assert lookUp.entryIndex > 0;
-            assert lookUp.handleIndex > 0;
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, -1, lookUp.handleIndex, null);
+            assert lookUp.sliceIndex > 0;
+            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, -1, lookUp.sliceIndex, null);
 
             // publish
             if (!c.publish()) {
@@ -630,10 +663,10 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Chunk.LookUp lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null) {
+        if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
-        return new OakRValueBufferImpl(lookUp.handle.getByteBuffer());
+        return new OakRValueBufferImpl(lookUp.valueSlice, operator);
     }
 
     <T> T getValueTransformation(K key, Function<ByteBuffer, T> transformer) {
@@ -642,13 +675,14 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null) {
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
 
-        T transformation = lookUp.handle.transform(transformer);
-        return transformation;
+        Map.Entry<Result, T> result = operator.transform(lookUp.valueSlice, transformer, NO_GENERATION);
+        if (result.getKey() == RETRY) return getValueTransformation(key, transformer);
+        return result.getValue();
 
     }
 
@@ -659,7 +693,7 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Chunk.LookUp lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null || lookUp.entryIndex == -1) {
+        if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
         }
         ByteBuffer serializedKey = c.readKey(lookUp.entryIndex).slice();
@@ -673,7 +707,7 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key);
         Chunk.LookUp lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null || lookUp.entryIndex == -1) {
+        if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
         }
         return c.readKey(lookUp.entryIndex).slice();
@@ -732,10 +766,12 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null) return false;
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp == null || lookUp.valueSlice == null) return false;
 
-        return lookUp.handle.compute(computer);
+        Result result = operator.compute(lookUp.valueSlice, computer, NO_GENERATION);
+        if (result == RETRY) return computeIfPresent(key, computer);
+        return result == TRUE;
     }
 
     // encapsulates finding of the chunk in the skip list and later chunk list traversal
@@ -748,43 +784,25 @@ class InternalOakMap<K, V> {
 
     V replace(K key, V value, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null)
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp == null || lookUp.valueSlice == null)
             return null;
-
-        Function<ByteBuffer, V> replaceTransform = bb -> {
-            // mutatingTransform guarantees that this is write-synchronous handle is not deleted
-            V v = valueDeserializeTransformer.apply(bb);
-
-            lookUp.handle.put(value, valueSerializer, memoryManager);
-
-            return v;
-        };
-
         // will return null if handle was deleted between prior lookup and the next call
-        return (V) lookUp.handle.mutatingTransform(replaceTransform);
+        AbstractMap.SimpleEntry<Result, V> result = operator.exchange(c, lookUp, value, valueDeserializeTransformer, valueSerializer, memoryManager);
+        if (result.getKey() == RETRY) return replace(key, value, valueDeserializeTransformer);
+        return result.getValue();
     }
 
     boolean replace(K key, V oldValue, V newValue, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp<V> lookUp = c.lookUp(key);
-        if (lookUp == null || lookUp.handle == null)
+        Chunk.LookUp lookUp = c.lookUp(key);
+        if (lookUp == null || lookUp.valueSlice == null)
             return false;
 
-        Function<ByteBuffer, Boolean> replaceTransform = bb -> {
-            // mutatingTransform guarantees that this is write-synchronous handle is not deleted
-            V v = valueDeserializeTransformer.apply(bb);
-            if (!v.equals(oldValue))
-                return false;
-
-            lookUp.handle.put(newValue, valueSerializer, memoryManager);
-
-            return true;
-        };
-
         // res can be null if handle was deleted between lookup and the next call
-        Boolean res = (Boolean) lookUp.handle.mutatingTransform(replaceTransform);
-        return (res != null) ? res : false;
+        Result res = operator.compareExchange(c, lookUp, oldValue, newValue, valueDeserializeTransformer, valueSerializer, memoryManager);
+        if (res == RETRY) return replace(key, oldValue, newValue, valueDeserializeTransformer);
+        return res == TRUE;
     }
 
     public Map.Entry<K, V> lowerEntry(K key) {
@@ -815,10 +833,10 @@ class InternalOakMap<K, V> {
             return new AbstractMap.SimpleImmutableEntry<>(null, null);
         }
 
-        c.getHandle(prevIndex);
+        c.getSlice(prevIndex);
         return new AbstractMap.SimpleImmutableEntry<>(
                 keySerializer.deserialize(prevKey),
-                valueSerializer.deserialize(c.getHandle(prevIndex).getSlicedReadOnlyByteBuffer()));
+                valueSerializer.deserialize(operator.getActualValue(c.getSlice(prevIndex)).asReadOnlyBuffer()));
     }
 
     /*-------------- Iterators --------------*/
@@ -962,7 +980,7 @@ class InternalOakMap<K, V> {
          * Advances next to higher entry.
          * Return previous index
          */
-        Map.Entry<ByteBuffer, Handle<V>> advance() {
+        Map.Entry<ByteBuffer, Slice> advance(boolean needsKey, boolean needsValue) {
 
             if (state == null) {
                 throw new NoSuchElementException();
@@ -974,10 +992,10 @@ class InternalOakMap<K, V> {
                 initAfterRebalance();
             }
 
-            ByteBuffer bb = state.getChunk().readKey(state.getIndex()).slice();
-            Handle<V> currentHandle = state.getChunk().getHandle(state.getIndex());
+            ByteBuffer bb = needsKey ? state.getChunk().readKey(state.getIndex()).slice() : null;
+            Slice currentSlice = needsValue ? state.getChunk().getSlice(state.getIndex()) : null;
             advanceState();
-            return new AbstractMap.SimpleImmutableEntry<>(bb, currentHandle);
+            return new AbstractMap.SimpleImmutableEntry<>(bb, currentSlice);
         }
 
         private void initState(boolean isDescending, K lowerBound, boolean lowerInclusive,
@@ -1071,11 +1089,11 @@ class InternalOakMap<K, V> {
 
         @Override
         public OakRBuffer next() {
-            Handle handle = advance().getValue();
-            if (handle == null)
+            Slice slice = advance(false, true).getValue();
+            if (slice == null)
                 return null;
 
-            return new OakRValueBufferImpl(handle.getByteBuffer());
+            return new OakRValueBufferImpl(slice, operator);
         }
     }
 
@@ -1090,11 +1108,12 @@ class InternalOakMap<K, V> {
         }
 
         public T next() {
-            Handle<V> handle = advance().getValue();
+            Slice handle = advance(false, true).getValue();
             if (handle == null) {
                 return null;
             }
-            return handle.transform(transformer);
+            //TODO: what about retries
+            return operator.transform(handle, transformer, NO_GENERATION).getValue();
         }
     }
 
@@ -1105,13 +1124,13 @@ class InternalOakMap<K, V> {
         }
 
         public Map.Entry<OakRBuffer, OakRBuffer> next() {
-            Map.Entry<ByteBuffer, Handle<V>> pair = advance();
+            Map.Entry<ByteBuffer, Slice> pair = advance(true, true);
             if (pair.getValue() == null) {
                 return null;
             }
             return new AbstractMap.SimpleImmutableEntry<>(
                     new OakRKeyBufferImpl(pair.getKey()),
-                    new OakRValueBufferImpl(pair.getValue().getByteBuffer()));
+                    new OakRValueBufferImpl(pair.getValue(), operator));
         }
     }
 
@@ -1128,19 +1147,19 @@ class InternalOakMap<K, V> {
 
         public T next() {
 
-            Map.Entry<ByteBuffer, Handle<V>> pair = advance();
-            Handle handle = pair.getValue();
+            Map.Entry<ByteBuffer, Slice> pair = advance(true, true);
+            Slice slice = pair.getValue();
             ByteBuffer serializedKey = pair.getKey();
-            if (handle == null) {
+            if (slice == null) {
                 return null;
             }
-            if (!handle.readLock())
+            if (operator.lockRead(slice, NO_GENERATION) != TRUE)
                 return null;
-            ByteBuffer serializedValue = handle.getSlicedReadOnlyByteBuffer();
-            Map.Entry<ByteBuffer, ByteBuffer> entry = new AbstractMap.SimpleEntry<ByteBuffer, ByteBuffer>(serializedKey, serializedValue);
+            ByteBuffer serializedValue = operator.getActualValue(slice).asReadOnlyBuffer();
+            Map.Entry<ByteBuffer, ByteBuffer> entry = new AbstractMap.SimpleEntry<>(serializedKey, serializedValue);
 
             T transformation = transformer.apply(entry);
-            handle.readUnlock();
+            operator.unlockRead(slice, NO_GENERATION);
             return transformation;
         }
     }
@@ -1154,7 +1173,7 @@ class InternalOakMap<K, V> {
         @Override
         public OakRBuffer next() {
 
-            Map.Entry<ByteBuffer, Handle<V>> pair = advance();
+            Map.Entry<ByteBuffer, Slice> pair = advance(true, false);
             return new OakRKeyBufferImpl(pair.getKey());
 
         }
@@ -1171,7 +1190,7 @@ class InternalOakMap<K, V> {
         }
 
         public T next() {
-            Map.Entry<ByteBuffer, Handle<V>> pair = advance();
+            Map.Entry<ByteBuffer, Slice> pair = advance(true, false);
             ByteBuffer serializedKey = pair.getKey();
             return transformer.apply(serializedKey);
         }
@@ -1203,24 +1222,24 @@ class InternalOakMap<K, V> {
         return new KeyTransformIterator<>(lo, loInclusive, hi, hiInclusive, isDescending, transformer);
     }
 
-    static class Result<V> {
+    static class ReturnValue<V> {
         final V value;
         final boolean flag;
         final boolean hasValue;
 
-        private Result(V value, boolean flag, boolean hasValue) {
+        private ReturnValue(V value, boolean flag, boolean hasValue) {
             this.value = value;
             this.flag = flag;
             this.hasValue = hasValue;
 
         }
 
-        static <V> Result<V> withValue(V value) {
-            return new Result<>(value, false, true);
+        static <V> ReturnValue<V> withValue(V value) {
+            return new ReturnValue<>(value, false, true);
         }
 
-        static <V> Result<V> withFlag(boolean flag) {
-            return new Result<>(null, flag, false);
+        static <V> ReturnValue<V> withFlag(boolean flag) {
+            return new ReturnValue<>(null, flag, false);
         }
 
     }

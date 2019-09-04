@@ -2,10 +2,12 @@ package com.oath.oak;
 
 import java.nio.ByteBuffer;
 
-public interface OffHeapValueUtils {
+public interface NovaValueUtils {
     enum Result {
         TRUE, FALSE, RETRY
     }
+
+    int NO_GENERATION = -1;
 
     int getHeaderSize();
 
@@ -16,6 +18,8 @@ public interface OffHeapValueUtils {
     ByteBuffer getActualValueThreadSafe(Slice s);
 
     ByteBuffer getActualValue(Slice s);
+
+
 
     Result lockRead(Slice s, int generation);
 

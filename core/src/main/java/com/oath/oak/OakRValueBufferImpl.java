@@ -14,20 +14,24 @@ import java.util.function.Function;
 // remove header
 public class OakRValueBufferImpl implements OakRBuffer {
 
-    private final ByteBuffer bb;
+    private Slice s;
+    private ByteBuffer bb;
+    private final NovaValueOperations operator;
 
-    OakRValueBufferImpl(ByteBuffer bb) {
-        this.bb = bb;
+    OakRValueBufferImpl(Slice s, NovaValueOperations operator) {
+        this.s = s;
+        this.bb = s.getByteBuffer();
+        this.operator = operator;
     }
 
-    private int valuePosition(){
-        return bb.position() + ValueUtils.VALUE_HEADER_SIZE;
+    private int valuePosition() {
+        return bb.position() + operator.getHeaderSize();
     }
 
     @Override
     public int capacity() {
         start();
-        int capacity = bb.remaining() - ValueUtils.VALUE_HEADER_SIZE;
+        int capacity = bb.remaining() - operator.getHeaderSize();
         end();
         return capacity;
     }
@@ -35,7 +39,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     @Override
     public byte get(int index) {
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         byte b = bb.get(index + valuePosition());
         end();
         return b;
@@ -54,7 +58,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public char getChar(int index) {
         char c;
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         c = bb.getChar(index + valuePosition());
         end();
         return c;
@@ -64,7 +68,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public short getShort(int index) {
         short s;
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         s = bb.getShort(index + valuePosition());
         end();
         return s;
@@ -74,7 +78,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public int getInt(int index) {
         int i;
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         i = bb.getInt(index + valuePosition());
         end();
         return i;
@@ -84,7 +88,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public long getLong(int index) {
         long l;
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         l = bb.getLong(index + valuePosition());
         end();
         return l;
@@ -94,7 +98,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public float getFloat(int index) {
         float f;
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         f = bb.getFloat(index + valuePosition());
         end();
         return f;
@@ -104,7 +108,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public double getDouble(int index) {
         double d;
         start();
-        if(index < 0) throw new IndexOutOfBoundsException();
+        if (index < 0) throw new IndexOutOfBoundsException();
         d = bb.getDouble(index + valuePosition());
         end();
         return d;
@@ -132,18 +136,21 @@ public class OakRValueBufferImpl implements OakRBuffer {
     public void unsafeCopyBufferToIntArray(int srcPosition, int[] dstArray, int countInts) {
         start();
         ByteBuffer dup = bb.duplicate();
-        dup.position(dup.position() + ValueUtils.VALUE_HEADER_SIZE);
+        dup.position(dup.position() + operator.getHeaderSize());
         ValueUtils.unsafeBufferToIntArrayCopy(dup, srcPosition, dstArray, countInts);
         end();
     }
 
     private void start() {
-        if (!ValueUtils.lockRead(bb))
+        NovaValueUtils.Result result = operator.lockRead(s, NovaValueUtils.NO_GENERATION);
+        if (result == NovaValueUtils.Result.FALSE)
             throw new ConcurrentModificationException();
+        else if (result == NovaValueUtils.Result.RETRY)
+            throw new UnsupportedOperationException();
     }
 
     private void end() {
-        ValueUtils.unlockRead(bb);
+        operator.unlockRead(s, NovaValueUtils.NO_GENERATION);
     }
 
 }
