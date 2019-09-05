@@ -186,12 +186,26 @@ public class Test {
      *
      * @throws InterruptedException
      */
+
+    private void printHeapStats(String message) {
+        System.gc();
+        long heapSize = Runtime.getRuntime().totalMemory(); // Get current size of heap in bytes
+        long heapFreeSize = Runtime.getRuntime().freeMemory();
+
+        int M = 1024 * 1024;
+        System.out.println("\n" + message);
+        System.out.println((float) (heapSize - heapFreeSize) / M);
+        System.out.println((float) (((OakMap) oakBench).ma.allocated()) / M);
+    }
+
     private void execute(int milliseconds, boolean maint)
             throws InterruptedException {
+        printHeapStats("Before");
         long startTime = System.currentTimeMillis();
         double count = fill(Parameters.range, Parameters.size);
         double initTime = ((double) (System.currentTimeMillis() - startTime)) / 1000.0;
-        System.out.println("Initialization complete in (s) " + initTime + " operations " + count);
+        System.out.println("Initialization complete in (s) " + initTime + " operations " + count + ". T-put: " + (count / initTime) + " ops/sec");
+        printHeapStats("After");
 
         Thread.sleep(5000);
         startTime = System.currentTimeMillis();
