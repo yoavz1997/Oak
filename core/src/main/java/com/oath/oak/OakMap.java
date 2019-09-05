@@ -53,7 +53,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
 
     // internal constructor, to create OakMap use OakMapBuilder
     OakMap(K minKey, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer, OakComparator<K> oakComparator,
-           int chunkMaxItems, int chunkBytesPerItem, MemoryManager mm, ThreadIndexCalculator threadIndexCalculator) {
+           int chunkMaxItems, int chunkBytesPerItem, MemoryManager mm, ThreadIndexCalculator threadIndexCalculator, NovaValueOperations operator) {
 
         this.comparator = (o1, o2) -> {
             if (o1 instanceof ByteBuffer) {
@@ -74,7 +74,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
         this.threadIndexCalculator = threadIndexCalculator;
         this.memoryManager = mm;
         this.internalOakMap = new InternalOakMap<K, V>(minKey, keySerializer, valueSerializer, this.comparator,
-                this.memoryManager, chunkMaxItems, chunkBytesPerItem, threadIndexCalculator, new NovaValueOperationsImpl());
+                this.memoryManager, chunkMaxItems, chunkBytesPerItem, threadIndexCalculator, operator);
         this.fromKey = null;
         this.fromInclusive = false;
         this.toKey = null;
@@ -158,7 +158,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
         if (value == null)
             throw new NullPointerException();
 
-        return (V) internalOakMap.put(key, value, valueDeserializeTransformer);
+        return internalOakMap.put(key, value, valueDeserializeTransformer);
     }
 
     /**
@@ -276,7 +276,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
         if (value == null)
             throw new NullPointerException();
 
-        return (V) internalOakMap.putIfAbsent(key, value, valueDeserializeTransformer).value;
+        return internalOakMap.putIfAbsent(key, value, valueDeserializeTransformer).value;
     }
 
 

@@ -326,13 +326,11 @@ class InternalOakMap<K, V> {
         if (state == Chunk.State.INFANT) {
             // the infant is already connected so rebalancer won't add this put
             rebalance(c.creator());
-            put(key, value, transformer);
-            return null;
+            return put(key, value, transformer);
         }
         if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
             rebalance(c);
-            put(key, value, transformer);
-            return null;
+            return put(key, value, transformer);
         }
 
         int ei = -1;
@@ -347,8 +345,7 @@ class InternalOakMap<K, V> {
             ei = c.allocateEntryAndKey(key);
             if (ei == -1) {
                 rebalance(c);
-                put(key, value, transformer);
-                return null;
+                return put(key, value, transformer);
             }
             int prevEi = c.linkEntry(ei, true, key);
             if (prevEi != ei) {
@@ -357,11 +354,10 @@ class InternalOakMap<K, V> {
             }
         }
 
-        int hi = c.allocateHandle();
+        int hi = c.allocateSlice();
         if (hi == -1) {
             rebalance(c);
-            put(key, value, transformer);
-            return null;
+            return put(key, value, transformer);
         }
 
         c.writeValue(hi, value); // write value in place
@@ -372,8 +368,7 @@ class InternalOakMap<K, V> {
         if (!c.publish()) {
             c.freeSlice(hi);
             rebalance(c);
-            put(key, value, transformer);
-            return null;
+            return put(key, value, transformer);
         }
 
         finishAfterPublishing(opData, c);
@@ -443,7 +438,7 @@ class InternalOakMap<K, V> {
             }
         }
 
-        int hi = c.allocateHandle();
+        int hi = c.allocateSlice();
         if (hi == -1) {
             rebalance(c);
             return putIfAbsent(key, value, transformer);
@@ -546,7 +541,7 @@ class InternalOakMap<K, V> {
             }
         }
 
-        int hi = c.allocateHandle();
+        int hi = c.allocateSlice();
         if (hi == -1) {
             rebalance(c);
             return putIfAbsentComputeIfPresent(key, value, computer);
@@ -614,11 +609,12 @@ class InternalOakMap<K, V> {
                     return null;
                 }
 
-                //TODO: react to RETRY
-                if (operator.remove(lookUp.valueSlice, memoryManager, NO_VERSION) == FALSE) {
+                final Result removeResult = operator.remove(lookUp.valueSlice, memoryManager, NO_VERSION);
+                if (removeResult == FALSE) {
                     // we didn't succeed to remove the handle (it was marked as deleted already by someone else)
                     return null;
                 }
+                if (removeResult == RETRY) return remove(key, oldValue, transformer);
                 // we have marked this handle as deleted (successful remove)
                 logicallyDeleted = true;
                 v = vv;
@@ -1112,8 +1108,10 @@ class InternalOakMap<K, V> {
             if (handle == null) {
                 return null;
             }
-            //TODO: what about retries
-            return operator.transform(handle, transformer, NO_VERSION).getValue();
+
+            final Map.Entry<Result, T> resultTEntry = operator.transform(handle, transformer, NO_VERSION);
+            if (resultTEntry.getKey() == RETRY) throw new UnsupportedOperationException();
+            return resultTEntry.getValue();
         }
     }
 

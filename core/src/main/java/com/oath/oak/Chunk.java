@@ -20,8 +20,7 @@ import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import static com.oath.oak.NovaValueUtils.Result.FALSE;
-import static com.oath.oak.NovaValueUtils.Result.TRUE;
+import static com.oath.oak.NovaValueUtils.Result.*;
 
 public class Chunk<K, V> {
 
@@ -339,7 +338,7 @@ public class Chunk<K, V> {
                 Slice s = valueSlices[hi];
                 NovaValueUtils.Result result = operator.isValueDeleted(s, NovaValueUtils.NO_VERSION);
                 if (result == TRUE) return new LookUp(null, curr, hi);
-                assert result == FALSE;
+                if (result == RETRY) throw new UnsupportedOperationException();
                 return new LookUp(s, curr, hi);
             }
             // otherwise- proceed to next item
@@ -425,7 +424,7 @@ public class Chunk<K, V> {
      *
      * @return if chunk is full return -1, otherwise return new handle index
      */
-    int allocateHandle() {
+    int allocateSlice() {
         int hi = sliceIndex.getAndIncrement();
         if (hi + 1 > valueSlices.length) {
             return -1;
@@ -554,7 +553,6 @@ public class Chunk<K, V> {
         }
 
         // the operation is either NO_OP, PUT, PUT_IF_ABSENT, COMPUTE
-        int expectedHandleIdx = opData.sliceIndex;
         int foundHandleIdx = getEntryField(opData.entryIndex, OFFSET.VALUE_BUFFER);
 
         if (foundHandleIdx < 0) {

@@ -98,7 +98,7 @@ public class ResizeValueTest {
         }
     }
 
-    @Test(expected = ConcurrentModificationException.class)
+    @Test
     public void testResizeWithZCGet() {
         oak.zc().put("A", "");
         OakRBuffer buffer = oak.zc().get("A");

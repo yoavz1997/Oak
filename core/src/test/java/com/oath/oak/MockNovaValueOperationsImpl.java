@@ -1,37 +1,20 @@
 package com.oath.oak;
 
-import sun.misc.Unsafe;
-import sun.nio.ch.DirectBuffer;
-
 import java.nio.ByteBuffer;
 import java.util.AbstractMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static com.oath.oak.NovaValueOperationsImpl.LockStates.*;
 import static com.oath.oak.NovaValueUtils.Result.*;
-import static java.lang.Integer.reverseBytes;
 
-public class NovaValueOperationsImpl implements NovaValueOperations {
-    enum LockStates {
-        FREE(0), LOCKED(1), DELETED(2), MOVED(3);
+public class MockNovaValueOperationsImpl implements NovaValueOperations {
+    private NovaValueUtils mock;
 
-        public final int value;
-
-        LockStates(int value) {
-            this.value = value;
-        }
+    MockNovaValueOperationsImpl(NovaValueUtils mock) {
+        this.mock = mock;
     }
 
-    private static final int LOCK_MASK = 0x3;
-    private static final int LOCK_SHIFT = 2;
     private static final int VALUE_HEADER_SIZE = 4;
-
-    private static Unsafe unsafe = UnsafeUtils.unsafe;
-
-    private boolean CASLock(Slice s, int expectedLock, int newLock) {
-        return unsafe.compareAndSwapInt(null, ((DirectBuffer) s.getByteBuffer()).address() + s.getByteBuffer().position() + getLockLocation(), reverseBytes(expectedLock), reverseBytes(newLock));
-    }
 
     @Override
     public void unsafeBufferToIntArrayCopy(ByteBuffer bb, int srcPosition, int[] dstArray, int countInts) {
@@ -66,26 +49,10 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         Slice s = lookUp.valueSlice;
         int capacity = serializer.calculateSize(newVal);
         if (capacity + getHeaderSize() > s.getByteBuffer().remaining()) {
-            if (!chunk.publish()) {
-                //rebalancing in progress, so I cannot move the value. Need to abort
-                return null;
-            }
-            s = moveValue(chunk, lookUp, capacity, memoryManager);
-            chunk.unpublish();
+            throw new UnsupportedOperationException();
         }
         ByteBuffer bb = getActualValue(s);
         serializer.serialize(newVal, bb);
-        return s;
-    }
-
-    private <K, V> Slice moveValue(Chunk<K, V> chunk, Chunk.LookUp lookUp, int capacity, MemoryManager memoryManager) {
-        Slice s = lookUp.valueSlice;
-        putInt(s, getLockLocation(), MOVED.value);
-
-        s = memoryManager.allocateSlice(capacity + getHeaderSize());
-        putInt(s, getLockLocation(), LOCKED.value);
-        assert chunk.casSliceArray(lookUp.sliceIndex, lookUp.valueSlice, s);
-        releaseSlice(s, memoryManager);
         return s;
     }
 
@@ -155,67 +122,31 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
 
     @Override
     public Result lockRead(Slice s, int version) {
-        int lockState;
-        do {
-            lockState = getInt(s, getLockLocation());
-            if (lockState == DELETED.value) return FALSE;
-            if (lockState == MOVED.value) return RETRY;
-            lockState &= ~LOCK_MASK;
-        } while (!CASLock(s, lockState, lockState + (1 << LOCK_SHIFT)));
-        return TRUE;
+        return mock.lockRead(s, version);
     }
 
     @Override
     public Result unlockRead(Slice s, int version) {
-        int lockState;
-        do {
-            lockState = getInt(s, getLockLocation());
-            lockState &= ~LOCK_MASK;
-        } while (!CASLock(s, lockState, lockState - (1 << LOCK_SHIFT)));
-        return TRUE;
+        return mock.unlockRead(s, version);
     }
 
     @Override
     public Result lockWrite(Slice s, int version) {
-        int lockState;
-        do {
-            lockState = getInt(s, getLockLocation());
-            if (lockState == DELETED.value) return FALSE;
-            if (lockState == MOVED.value) return RETRY;
-        } while (!CASLock(s, FREE.value, LOCKED.value));
-        return TRUE;
+        return mock.lockWrite(s, version);
     }
 
     @Override
     public Result unlockWrite(Slice s) {
-        putInt(s, getLockLocation(), FREE.value);
-        return TRUE;
+        return mock.unlockWrite(s);
     }
 
     @Override
     public Result deleteValue(Slice s, int version) {
-        int lockState;
-        do {
-            lockState = getInt(s, getLockLocation());
-            if (lockState == DELETED.value) return FALSE;
-            if (lockState == MOVED.value) return RETRY;
-        } while (!CASLock(s, FREE.value, DELETED.value));
-        return TRUE;
+        return mock.deleteValue(s, version);
     }
 
     @Override
     public Result isValueDeleted(Slice s, int version) {
-        int lockState = getInt(s, getLockLocation());
-        if (lockState == DELETED.value) return TRUE;
-        if (lockState == MOVED.value) return RETRY;
-        return FALSE;
-    }
-
-    private int getInt(Slice s, int index) {
-        return s.getByteBuffer().getInt(s.getByteBuffer().position() + index);
-    }
-
-    private void putInt(Slice s, int index, int value) {
-        s.getByteBuffer().putInt(s.getByteBuffer().position() + index, value);
+        return mock.isValueDeleted(s, version);
     }
 }
