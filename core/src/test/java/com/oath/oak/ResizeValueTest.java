@@ -1,6 +1,7 @@
 package com.oath.oak;
 
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.ConcurrentModificationException;
@@ -98,6 +99,7 @@ public class ResizeValueTest {
         }
     }
 
+    @Ignore
     @Test
     public void testResizeWithZCGet() {
         oak.zc().put("A", "");

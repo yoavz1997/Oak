@@ -96,7 +96,7 @@ public class NovaValueOperationsTest {
             e.printStackTrace();
         }
         Thread.sleep(2000);
-        putInt(12, randomValue);
+        putInt(operator.getHeaderSize() + 4, randomValue);
         operator.unlockWrite(s);
         transformer.join();
     }
