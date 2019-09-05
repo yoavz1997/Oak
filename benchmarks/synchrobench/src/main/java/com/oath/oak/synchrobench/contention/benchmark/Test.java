@@ -195,7 +195,11 @@ public class Test {
         int M = 1024 * 1024;
         System.out.println("\n" + message);
         System.out.println((float) (heapSize - heapFreeSize) / M);
-        System.out.println((float) (((OakMap) oakBench).ma.allocated()) / M);
+        try {
+            System.out.println((float) (((OakMap) oakBench).ma.allocated()) / M);
+        } catch (ClassCastException e) {
+            System.out.println("This is not Oak, so no Off-Heap data available");
+        }
     }
 
     private void execute(int milliseconds, boolean maint)
