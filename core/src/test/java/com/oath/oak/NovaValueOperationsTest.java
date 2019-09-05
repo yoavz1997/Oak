@@ -19,6 +19,22 @@ public class NovaValueOperationsTest {
     private MemoryManager memoryManager;
     private Slice s;
     private final NovaValueOperations operator = new NovaValueOperationsImpl();
+    private final OakSerializer<Integer> oakSerializer = new OakSerializer<Integer>() {
+        @Override
+        public void serialize(Integer object, ByteBuffer targetBuffer) {
+            targetBuffer.putInt(0, object);
+        }
+
+        @Override
+        public Integer deserialize(ByteBuffer byteBuffer) {
+            return null;
+        }
+
+        @Override
+        public int calculateSize(Integer object) {
+            return 0;
+        }
+    };
 
     @Before
     public void init() {
@@ -564,29 +580,14 @@ public class NovaValueOperationsTest {
                     e.printStackTrace();
                 }
                 int result = operator.exchange(null, new Chunk.LookUp(s, -1, -1), id,
-                        byteBuffer -> byteBuffer.getInt(0), new OakSerializer<Integer>() {
-                            @Override
-                            public void serialize(Integer object, ByteBuffer targetBuffer) {
-                                targetBuffer.putInt(0, object);
-                            }
-
-                            @Override
-                            public Integer deserialize(ByteBuffer byteBuffer) {
-                                return null;
-                            }
-
-                            @Override
-                            public int calculateSize(Integer object) {
-                                return 0;
-                            }
-                        }, memoryManager).getValue();
+                        byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager).getValue();
                 consensusArray[id - 1] = result;
                 try {
                     barrier.await();
                 } catch (InterruptedException | BrokenBarrierException e) {
                     e.printStackTrace();
                 }
-                int winner = -1;
+                int winner;
                 for (int j = 0; j < numOfThreads; j++) {
                     if (consensusArray[j] != 1) continue;
                     winner = consensusArray[j];
@@ -595,6 +596,115 @@ public class NovaValueOperationsTest {
                     }
                     if (consensusWinner.get() != winner) fail();
                 }
+            });
+            threads[i].start();
+        }
+        for (int i = 0; i < numOfThreads; i++) {
+            threads[i].join();
+        }
+    }
+
+    @Test
+    public void successfulCASTest() {
+        putInt(operator.getHeaderSize(), 0);
+        assertEquals(TRUE, operator.compareExchange(null, new Chunk.LookUp(s, -1, -1), 0, 1, byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager));
+        assertEquals(1, getInt(operator.getHeaderSize()));
+    }
+
+    @Test
+    public void failedCASTest() {
+        putInt(operator.getHeaderSize(), 2);
+        assertEquals(FALSE, operator.compareExchange(null, new Chunk.LookUp(s, -1, -1), 0, 1, byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager));
+        assertEquals(2, getInt(operator.getHeaderSize()));
+    }
+
+    @Test
+    public void cannotCASReadLockedTest() throws InterruptedException {
+        int initValue = new Random().nextInt();
+        putInt(operator.getHeaderSize(), initValue);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Thread casser = new Thread(() -> {
+            try {
+                barrier.await();
+            } catch (InterruptedException | BrokenBarrierException e) {
+                e.printStackTrace();
+            }
+            assertEquals(TRUE, operator.compareExchange(null, new Chunk.LookUp(s, -1, -1), initValue, initValue + 1, byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager));
+        });
+        operator.lockRead(s, NovaValueUtils.NO_VERSION);
+        casser.start();
+        try {
+            barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+        Thread.sleep(2000);
+        int readValue = getInt(operator.getHeaderSize());
+        operator.unlockRead(s, NovaValueUtils.NO_VERSION);
+        casser.join();
+        assertEquals(initValue, readValue);
+    }
+
+    @Test
+    public void cannotCASWriteLockedTest() throws InterruptedException {
+        putInt(operator.getHeaderSize(), 0);
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Thread casser = new Thread(() -> {
+            try {
+                barrier.await();
+            } catch (InterruptedException | BrokenBarrierException e) {
+                e.printStackTrace();
+            }
+            NovaValueUtils.Result result = operator.compareExchange(null, new Chunk.LookUp(s, -1, -1), 1, 2, byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager);
+            assertEquals(TRUE, result);
+        });
+        operator.lockWrite(s, NovaValueUtils.NO_VERSION);
+        casser.start();
+        try {
+            barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+        Thread.sleep(2000);
+        putInt(operator.getHeaderSize(), 1);
+        operator.unlockWrite(s);
+        casser.join();
+        assertEquals(2, getInt(operator.getHeaderSize()));
+    }
+
+    @Test
+    public void cannotCASDeletedValueTest() {
+        putInt(operator.getHeaderSize(), 0);
+        operator.deleteValue(s, NovaValueUtils.NO_VERSION);
+        assertEquals(FALSE, operator.compareExchange(null, new Chunk.LookUp(s, -1, -1), 0, 0, byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager));
+    }
+
+    @Test
+    public void casIsConsensusTest() throws InterruptedException {
+        int numOfThreads = 16;
+        putInt(operator.getHeaderSize(), 0);
+        Thread[] threads = new Thread[numOfThreads];
+        CyclicBarrier barrier = new CyclicBarrier(numOfThreads);
+        AtomicInteger consensusWinner = new AtomicInteger(-1);
+        for (int i = 0; i < numOfThreads; i++) {
+            int id = i + 1;
+            threads[i] = new Thread(() -> {
+                try {
+                    barrier.await();
+                } catch (InterruptedException | BrokenBarrierException e) {
+                    e.printStackTrace();
+                }
+                NovaValueUtils.Result result = operator.compareExchange(null, new Chunk.LookUp(s, -1, -1), 0, id,
+                        byteBuffer -> byteBuffer.getInt(0), oakSerializer, memoryManager);
+                assertNotEquals(result, RETRY);
+                if (result == TRUE)
+                    assertTrue(consensusWinner.compareAndSet(-1, id));
+                try {
+                    barrier.await();
+                } catch (InterruptedException | BrokenBarrierException e) {
+                    e.printStackTrace();
+                }
+                assertEquals(consensusWinner.get(), getInt(operator.getHeaderSize()));
             });
             threads[i].start();
         }
