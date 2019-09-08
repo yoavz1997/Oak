@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.oath.oak.Chunk.DELETED_VALUE;
+import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
 import static com.oath.oak.GemmValueUtils.Result.*;
 
 class InternalOakMap<K, V> {
@@ -300,7 +301,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return put(key, value, transformer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp != null && lookUp.valueSlice != null) {
             V v = null;
             if (transformer != null) {
@@ -371,13 +374,23 @@ class InternalOakMap<K, V> {
         return null;
     }
 
+    private AtomicInteger counter = new AtomicInteger(0);
+
     Result<V> putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
         if (key == null || value == null) {
             throw new NullPointerException();
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            if (counter.incrementAndGet() == 10) {
+                counter.get();
+            }
+            return putIfAbsent(key, value, transformer);
+        }
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+        counter.set(0);
         if (lookUp != null && lookUp.valueSlice != null) {
             if (transformer == null) return Result.withFlag(false);
             AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
@@ -471,7 +484,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return putIfAbsentComputeIfPresent(key, value, computer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp != null && lookUp.valueSlice != null) {
             GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
             if (res == TRUE) {
@@ -551,6 +566,58 @@ class InternalOakMap<K, V> {
         return res == DELETED_VALUE;
     }
 
+    private void finalizeRemove(K key, Chunk<K, V> c, Chunk.LookUp lookUp, int oldGeneration) {
+        do {
+            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null, INVALID_GENERATION);
+            // publish
+            if (!c.publish()) {
+                rebalance(c);
+                c = findChunk(key); // find chunk matching key
+                Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+                if (resultLookUpEntry.getKey() == RETRY) return;
+                lookUp = resultLookUpEntry.getValue();
+                if (lookUp == null) return;
+                if (lookUp.generation == oldGeneration)
+                    continue;
+                else
+                    return;
+            }
+            finishAfterPublishing(opData, c);
+            return;
+        } while (true);
+    }
+
+    boolean zcRemove(K key) {
+        Chunk<K, V> c = findChunk(key); // find chunk matching key
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return zcRemove(key);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+
+        if (lookUp == null || lookUp.valueSlice == null) {
+            // There is no such key. If we did logical deletion and someone else did the physical deletion,
+            // then the old value is saved in v. Otherwise v is (correctly) null
+            return false;
+        }
+
+        GemmValueUtils.Result res = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+        if (res == FALSE) {
+            // we didn't succeed to remove the handle was marked as deleted already
+            return false;
+        } else if (res == RETRY) {
+            return zcRemove(key);
+        }
+        Chunk.State state = c.state();
+        if (state == Chunk.State.INFANT) {
+            // the infant is already connected so rebalancer won't add this put
+            rebalance(c.creator());
+        }
+        if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
+            rebalance(c);
+        }
+        finalizeRemove(key, c, lookUp, lookUp.generation);
+        return true;
+    }
+
     V remove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
         // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may still be linked!
         boolean logicallyDeleted = false;
@@ -558,7 +625,9 @@ class InternalOakMap<K, V> {
 
         while (true) {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
-            Chunk.LookUp lookUp = c.lookUp(key);
+            Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+            if (resultLookUpEntry.getKey() == RETRY) return remove(key, oldValue, transformer);
+            Chunk.LookUp lookUp = resultLookUpEntry.getValue();
 
             if (lookUp == null || lookUp.valueSlice == null) {
                 // There is no such key. If we did logical deletion and someone else did the physical deletion,
@@ -608,7 +677,7 @@ class InternalOakMap<K, V> {
 
             assert lookUp.entryIndex > 0;
             assert lookUp.valueStats > 0;
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null, -1);
+            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null, INVALID_GENERATION);
 
             // publish
             if (!c.publish()) {
@@ -628,7 +697,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return get(key);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
@@ -642,7 +713,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return getValueTransformation(key, transformer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
@@ -664,7 +737,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return getKeyTransformation(key, transformer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
         }
@@ -678,7 +753,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key);
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return getKey(key);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
         }
@@ -738,7 +815,9 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return computeIfPresent(key, computer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null) return false;
 
         GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
@@ -755,7 +834,9 @@ class InternalOakMap<K, V> {
 
     V replace(K key, V value, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return replace(key, value, valueDeserializeTransformer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null)
             return null;
         // will return null if handle was deleted between prior lookup and the next call
@@ -766,7 +847,9 @@ class InternalOakMap<K, V> {
 
     boolean replace(K key, V oldValue, V newValue, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Chunk.LookUp lookUp = c.lookUp(key);
+        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+        if (resultLookUpEntry.getKey() == RETRY) return replace(key, oldValue, newValue, valueDeserializeTransformer);
+        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null)
             return false;
 

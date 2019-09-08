@@ -519,8 +519,8 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
 
         public void remove(Object key) {
             m.checkKey(key);
-
-            m.internalOakMap.remove((K) key, null, null);
+            m.internalOakMap.zcRemove((K) key);
+//            m.internalOakMap.remove((K) key, null, null);
         }
 
         public boolean putIfAbsent(K key, V value) {

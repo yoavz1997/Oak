@@ -41,7 +41,7 @@ public class GemmAllocator implements Closeable {
 
     Slice allocateSlice(int size) {
         Slice s = manager.allocateSlice(size);
-        assert s.getByteBuffer().remaining() == size;
+        assert s.getByteBuffer().remaining() >= size;
         s.getByteBuffer().putInt(s.getByteBuffer().position(), getCurrentGeneration());
         return s;
     }

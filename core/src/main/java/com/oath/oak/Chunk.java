@@ -402,7 +402,7 @@ public class Chunk<K, V> {
     /**
      * look up key
      */
-    LookUp lookUp(K key) {
+    Map.Entry<GemmValueUtils.Result, LookUp> lookUp(K key) {
         // binary search sorted part of key array to quickly find node to start search at
         // it finds previous-to-key so start with its next
         int curr = getEntryField(binaryFind(key), OFFSET.NEXT);
@@ -414,27 +414,28 @@ public class Chunk<K, V> {
             // if item's key is larger - we've exceeded our key
             // it's not in chunk - no need to search further
             if (cmp > 0)
-                return null;
+                return new AbstractMap.SimpleImmutableEntry<>(TRUE, null);
                 // if keys are equal - we've found the item
             else if (cmp == 0) {
                 long valueStats = getValueStats(curr);
                 Slice valueSlice = buildValueSlice(valueStats);
                 Integer checkResult = checkValueConsistency(curr, valueSlice);
-                if (checkResult == null) return lookUp(key);
+                if (checkResult == null) return new AbstractMap.SimpleImmutableEntry<>(RETRY, null);
                 if (valueSlice == null) {
                     assert valueStats == 0;
-                    return new LookUp(null, valueStats, curr, INVALID_GENERATION);
+                    return new AbstractMap.SimpleImmutableEntry<>(TRUE, new LookUp(null, valueStats, curr, INVALID_GENERATION));
                 }
                 GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, checkResult);
-                if (result == TRUE) return new LookUp(null, valueStats, curr, checkResult);
-                else if (result == RETRY) return lookUp(key);
-                return new LookUp(valueSlice, valueStats, curr, checkResult);
+                if (result == TRUE)
+                    return new AbstractMap.SimpleImmutableEntry<>(TRUE, new LookUp(null, valueStats, curr, checkResult));
+                else if (result == RETRY) return new AbstractMap.SimpleImmutableEntry<>(RETRY, null);
+                return new AbstractMap.SimpleImmutableEntry<>(TRUE, new LookUp(valueSlice, valueStats, curr, checkResult));
             }
             // otherwise- proceed to next item
             else
                 curr = getEntryField(curr, OFFSET.NEXT);
         }
-        return null;
+        return new AbstractMap.SimpleImmutableEntry<>(TRUE, null);
     }
 
     static class LookUp {
@@ -507,7 +508,7 @@ public class Chunk<K, V> {
      * if CAS didn't succeed then this means that a rebalancer did this already
      **/
     void unpublish() {
-        pendingOps.decrementAndGet();
+        assert pendingOps.decrementAndGet() >= 0;
     }
 
 //    /**
