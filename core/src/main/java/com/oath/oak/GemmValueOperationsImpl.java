@@ -31,7 +31,6 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     private static final int LOCK_MASK = 0x3;
     private static final int LOCK_SHIFT = 2;
     private static final int VALUE_HEADER_SIZE = 4;
-    private static final GemmValueOperationsImpl instance = new GemmValueOperationsImpl();
 
     private static Unsafe unsafe = UnsafeUtils.unsafe;
 
@@ -92,7 +91,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     public Result compute(Slice s, Consumer<OakWBuffer> computer, int generation) {
         Result result = lockWrite(s, generation);
         if (result != TRUE) return result;
-        computer.accept(new OakWBufferImpl(s, instance));
+        computer.accept(new OakWBufferImpl(s, this));
         unlockWrite(s);
         return TRUE;
     }

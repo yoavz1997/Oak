@@ -22,7 +22,10 @@ public class GemmAllocatorTest {
         long newGeneration = gemmAllocator.getCurrentGeneration();
         assertEquals(oldGeneration + 1, newGeneration);
         for (int i = GemmAllocator.RELEASE_LIST_LIMIT - 1; i > -1; i--) {
-            assertEquals(allocatedSlices[i], gemmAllocator.allocateSlice(i + 5));
+            Slice s = gemmAllocator.allocateSlice(i + 5);
+            assertEquals(allocatedSlices[i].getBlockID(), s.getBlockID());
+            assertEquals(allocatedSlices[i].getByteBuffer().position(), s.getByteBuffer().position());
+            assertEquals(allocatedSlices[i].getByteBuffer().limit(), s.getByteBuffer().limit());
         }
     }
 }
