@@ -429,7 +429,7 @@ class InternalOakMap<K, V> {
                 prevHi = c.getSliceIndex(prevEi);
                 if (prevHi != -1) {
                     if (transformer == null) return ReturnValue.withFlag(false);
-                    Map.Entry<Result, V> readResult = operator.transform(c.getSlice(prevEi), transformer, NO_VERSION);
+                    Map.Entry<Result, V> readResult = operator.transform(c.getSliceByIndex(prevHi), transformer, NO_VERSION);
                     if (readResult.getKey() != TRUE) return putIfAbsent(key, value, transformer);
                     return ReturnValue.withValue(readResult.getValue());
                 } else {
@@ -529,7 +529,7 @@ class InternalOakMap<K, V> {
             if (prevEi != ei) {
                 prevHi = c.getSliceIndex(prevEi);
                 if (prevHi != -1) {
-                    Result result = operator.compute(c.getSlice(prevEi), computer, NO_VERSION);
+                    Result result = operator.compute(c.getSliceByIndex(prevHi), computer, NO_VERSION);
                     if (result == TRUE) {
                         // compute was successful and handle wasn't found deleted; in case
                         // this handle was already found as deleted, continue to construct another handle

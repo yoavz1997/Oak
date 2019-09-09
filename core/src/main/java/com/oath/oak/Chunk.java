@@ -311,6 +311,14 @@ public class Chunk<K, V> {
         }
     }
 
+    Slice getSliceByIndex(int sliceIndex) {
+        if (sliceIndex < 0) {
+            return null;
+        } else {
+            return valueSlices[sliceIndex];
+        }
+    }
+
     int getSliceIndex(int entryIndex) {
         return getEntryField(entryIndex, OFFSET.VALUE_BUFFER);
     }
