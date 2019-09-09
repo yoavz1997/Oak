@@ -374,8 +374,6 @@ class InternalOakMap<K, V> {
         return null;
     }
 
-    private AtomicInteger counter = new AtomicInteger(0);
-
     Result<V> putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
         if (key == null || value == null) {
             throw new NullPointerException();
@@ -384,13 +382,9 @@ class InternalOakMap<K, V> {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
         if (resultLookUpEntry.getKey() == RETRY) {
-            if (counter.incrementAndGet() == 10) {
-                counter.get();
-            }
             return putIfAbsent(key, value, transformer);
         }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        counter.set(0);
         if (lookUp != null && lookUp.valueSlice != null) {
             if (transformer == null) return Result.withFlag(false);
             AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
