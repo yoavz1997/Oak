@@ -31,7 +31,7 @@ public class SingleThreadTest {
 
     @After
     public void finish() {
-            oak.close();
+        oak.close();
     }
 
     @Test
@@ -139,6 +139,7 @@ public class SingleThreadTest {
         }
         for (int i = 0; i < 4 * maxItemsPerChunk; i++) {
             oak.zc().put(i, i);
+            assertEquals(0, oak.get(0).intValue());
         }
         for (Integer i = 0; i < 4 * maxItemsPerChunk; i++) {
             value = oak.get(i);
@@ -150,8 +151,9 @@ public class SingleThreadTest {
     public void testComputeIf() {
         Integer value;
         Consumer<OakWBuffer> computer = oakWBuffer -> {
-            if (oakWBuffer.getInt(0) == 0)
+            if (oakWBuffer.getInt(0) == 0) {
                 oakWBuffer.putInt(0, 1);
+            }
         };
         Integer key = 0;
         assertFalse(oak.zc().computeIfPresent(key, computer));
@@ -184,9 +186,10 @@ public class SingleThreadTest {
     @Test
     public void testCompute() {
         Integer value;
-        Consumer<OakWBuffer> computer =  oakWBuffer -> {
-            if (oakWBuffer.getInt(0) == 0)
+        Consumer<OakWBuffer> computer = oakWBuffer -> {
+            if (oakWBuffer.getInt(0) == 0) {
                 oakWBuffer.putInt(0, 1);
+            }
         };
         Integer key = 0;
         assertFalse(oak.zc().computeIfPresent(key, computer));

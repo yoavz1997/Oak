@@ -49,7 +49,7 @@ public class GemmAllocator implements Closeable {
     void releaseSlice(Slice s) {
         int idx = threadIndexCalculator.getIndex();
         List<Slice> myReleaseList = this.releaseLists.get(idx);
-        myReleaseList.add(s);
+        myReleaseList.add(s.duplicate());
         if (myReleaseList.size() >= RELEASE_LIST_LIMIT) {
             globalGemmNumber.incrementAndGet();
             for (Slice releasedSlice : myReleaseList) {
@@ -60,7 +60,7 @@ public class GemmAllocator implements Closeable {
     }
 
     Slice getSliceFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return new Slice(BlockID, getByteBufferFromBlockID(BlockID, bufferPosition, bufferLength).duplicate());
+        return new Slice(BlockID, getByteBufferFromBlockID(BlockID, bufferPosition, bufferLength));
     }
 
     ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {

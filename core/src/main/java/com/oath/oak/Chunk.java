@@ -21,6 +21,7 @@ import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
 import static com.oath.oak.GemmValueUtils.Result.RETRY;
 import static com.oath.oak.GemmValueUtils.Result.TRUE;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
+import static com.oath.oak.UnsafeUtils.intsToLong;
 
 public class Chunk<K, V> {
 
@@ -65,8 +66,8 @@ public class Chunk<K, V> {
 
     private static final int FIELDS = OFFSET.biggestOffset;  // # of fields in each item of key array
     // key block is part of key length integer, thus key length is limited to 65KB
-    private static final int KEY_LENGTH_MASK = 0xffff; // 16 lower bits
-    private static final int KEY_BLOCK_SHIFT = 16;
+    public static final int KEY_LENGTH_MASK = 0xffff; // 16 lower bits
+    public static final int KEY_BLOCK_SHIFT = 16;
     // Assume the length of a value is up to 8MB because there can be up to 512 blocks
     static final int VALUE_LENGTH_MASK = 0x7fffff;
     static final int VALUE_BLOCK_SHIFT = 23;
@@ -238,6 +239,11 @@ public class Chunk<K, V> {
         return memoryManager.getByteBufferFromBlockID(blockID, keyPosition, length);
     }
 
+    long readKeyStats(int entryIndex) {
+        return intsToLong(getEntryField(entryIndex, OFFSET.KEY_BLOCK_AND_LENGTH), getEntryField(entryIndex,
+                OFFSET.KEY_POSITION));
+    }
+
     /**
      * release key in slice, currently not in use, waiting for GC to be arranged
      **/
@@ -339,9 +345,13 @@ public class Chunk<K, V> {
         }
     }
 
+    static boolean isValueThere(int[] valueArray) {
+        return (valueArray[0] >>> VALUE_BLOCK_SHIFT) == INVALID_BLOCK_ID;
+    }
+
     Slice buildValueSlice(long valueStats) {
         int[] valueArray = UnsafeUtils.longToInts(valueStats);
-        if ((valueArray[0] >>> VALUE_BLOCK_SHIFT) == INVALID_BLOCK_ID) {
+        if (isValueThere(valueArray)) {
             return null;
         }
         return memoryManager.getSliceFromBlockID(valueArray[0] >>> VALUE_BLOCK_SHIFT, valueArray[1],
@@ -355,7 +365,7 @@ public class Chunk<K, V> {
             valuePosition = getEntryField(entryIndex, OFFSET.VALUE_POSITION);
             valueBlockAndLength = getEntryField(entryIndex, OFFSET.VALUE_BLOCK_AND_LENGTH);
         } while (valuePosition != getEntryField(entryIndex, OFFSET.VALUE_POSITION));
-        return UnsafeUtils.intsToLong(valueBlockAndLength, valuePosition);
+        return intsToLong(valueBlockAndLength, valuePosition);
     }
 
     int waitForGenToBeInvalid(int entryIndex) {
@@ -388,12 +398,13 @@ public class Chunk<K, V> {
         return results[0];
     }
 
-    Map.Entry<Slice, Integer> getConsistentValueFromEntry(int entryIndex) {
+    Map.Entry<Integer, Long> getConsistentValueStatsFromEntry(int entryIndex) {
         while (true) {
-            Slice value = getValueSlice(entryIndex);
+            long valueStats = getValueStats(entryIndex);
+            Slice value = buildValueSlice(valueStats);
             Integer result = checkValueConsistency(entryIndex, value);
             if (result != null) {
-                return new AbstractMap.SimpleImmutableEntry<>(value, result);
+                return new AbstractMap.SimpleEntry<>(result, valueStats);
             }
         }
     }
@@ -559,7 +570,7 @@ public class Chunk<K, V> {
         // key and value must be set before linking to the list so it will make sense when reached before put is done
         setEntryField(ei, OFFSET.VALUE_POSITION, 0); // set value index to -1, value is init to null
         setEntryField(ei, OFFSET.VALUE_BLOCK_AND_LENGTH, 0); // set value index to -1, value is init to null
-        setEntryField(ei, OFFSET.VALUE_GENERATION, -1);
+        setEntryField(ei, OFFSET.VALUE_GENERATION, INVALID_GENERATION);
         writeKey(key, ei);
         return ei;
     }
@@ -645,7 +656,7 @@ public class Chunk<K, V> {
         assert slice.getByteBuffer().remaining() == valueLength;
         valueSerializer.serialize(value, operator.getActualValueThreadSafe(slice));
         int valueBlockAndLength = (slice.getBlockID() << VALUE_BLOCK_SHIFT) | (valueLength & VALUE_LENGTH_MASK);
-        return UnsafeUtils.intsToLong(valueBlockAndLength, slice.getByteBuffer().position());
+        return intsToLong(valueBlockAndLength, slice.getByteBuffer().position());
     }
 
     public int getMaxItems() {

@@ -84,7 +84,7 @@ public class IteratorModificationTest {
                 false);
     }
 
-    @Test(timeout = 10000)
+    @Test//(timeout = 10000)
     public void iterationDuringRebalanceExclude() throws InterruptedException {
         doIterationTest(234,
                 false,
@@ -122,7 +122,8 @@ public class IteratorModificationTest {
             String startKeyString = generateString(startKey, KEY_SIZE);
             String endKeyString = generateString(endKey, KEY_SIZE);
 
-            try (OakMap<String, String> submap = oak.subMap(startKeyString, includeStart, endKeyString, includeEnd, isDescending)) {
+            try (OakMap<String, String> submap = oak.subMap(startKeyString, includeStart, endKeyString, includeEnd,
+                    isDescending)) {
 
                 Iterator<Map.Entry<String, String>> iterator = submap.entrySet().iterator();
 
@@ -136,20 +137,28 @@ public class IteratorModificationTest {
                     }
                     String expectedKey = generateString(currentKey.get(), KEY_SIZE);
                     String expectedVal = generateString(currentKey.get(), VALUE_SIZE);
+                    if (currentKey.get() == 255) {
+                        currentKey.get();
+                    }
                     Map.Entry<String, String> entry = iterator.next();
                     assertEquals(expectedKey, entry.getKey());
                     assertEquals(expectedVal, entry.getValue());
                     writeLock.release();
-                    if (!isDescending)
+                    if (!isDescending) {
                         currentKey.getAndIncrement();
-                    else
+                    } else {
                         currentKey.getAndDecrement();
+                    }
                     i++;
                 }
 
                 int expectedIterations = endKey - startKey + 1;
-                if (!includeEnd) expectedIterations--;
-                if (!includeStart) expectedIterations--;
+                if (!includeEnd) {
+                    expectedIterations--;
+                }
+                if (!includeStart) {
+                    expectedIterations--;
+                }
 
                 assertEquals(expectedIterations, i);
                 passed.set(true);

@@ -15,9 +15,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static com.oath.oak.Chunk.DELETED_VALUE;
+import static com.oath.oak.Chunk.*;
 import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
 import static com.oath.oak.GemmValueUtils.Result.*;
+import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
+import static com.oath.oak.UnsafeUtils.longToInts;
 
 class InternalOakMap<K, V> {
 
@@ -302,17 +304,23 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return put(key, value, transformer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return put(key, value, transformer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp != null && lookUp.valueSlice != null) {
             V v = null;
             if (transformer != null) {
-                AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
-                if (res.getKey() == RETRY) return put(key, value, transformer);
+                AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                        transformer, lookUp.generation);
+                if (res.getKey() == RETRY) {
+                    return put(key, value, transformer);
+                }
                 v = res.getValue();
             }
-            if (operator.put(c, lookUp, value, valueSerializer, memoryManager) != TRUE)
+            if (operator.put(c, lookUp, value, valueSerializer, memoryManager) != TRUE) {
                 return put(key, value, transformer);
+            }
             return v;
         }
 
@@ -386,10 +394,14 @@ class InternalOakMap<K, V> {
         }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp != null && lookUp.valueSlice != null) {
-            if (transformer == null) return Result.withFlag(false);
-            AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
-            if (res.getKey() == TRUE)
+            if (transformer == null) {
+                return Result.withFlag(false);
+            }
+            AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice, transformer
+                    , lookUp.generation);
+            if (res.getKey() == TRUE) {
                 return Result.withValue(res.getValue());
+            }
             return putIfAbsent(key, value, transformer);
         }
 
@@ -426,11 +438,15 @@ class InternalOakMap<K, V> {
             if (prevEi != ei) {
                 oldStats = c.getValueStats(prevEi);
                 if (oldStats != 0) {
-                    if (transformer == null) return Result.withFlag(false);
+                    if (transformer == null) {
+                        return Result.withFlag(false);
+                    }
                     int currGen = c.waitForGenToBeValid(ei);
-                    AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(oldStats), transformer, currGen);
-                    if (res.getKey() == TRUE)
+                    AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res =
+                            operator.transform(c.buildValueSlice(oldStats), transformer, currGen);
+                    if (res.getKey() == TRUE) {
                         return Result.withValue(res.getValue());
+                    }
                     // TODO: Should I restart? In the ZC case, the operation already linearized and returned
                     return putIfAbsent(key, value, transformer);
                 } else {
@@ -442,7 +458,8 @@ class InternalOakMap<K, V> {
         int[] generation = new int[1];
         long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
         c.waitForGenToBeInvalid(ei);
-        Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, newValueStats, oldStats, null, generation[0]);
+        Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, newValueStats, oldStats, null,
+                generation[0]);
 
         // publish put
         if (!c.publish()) {
@@ -453,15 +470,20 @@ class InternalOakMap<K, V> {
 
         long result = finishAfterPublishing(opData, c);
 
-        if (result != DELETED_VALUE)
+        if (result != DELETED_VALUE) {
             memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-        if (transformer == null) return Result.withFlag(result == DELETED_VALUE);
+        }
+        if (transformer == null) {
+            return Result.withFlag(result == DELETED_VALUE);
+        }
         // TODO: Should I restart? In the ZC case, the operation already linearized and returned
-        if (result == DELETED_VALUE)
+        if (result == DELETED_VALUE) {
             return Result.withValue(null);
+        }
         // busy-wait until the generation is set
         int currGen = c.waitForGenToBeValid(ei);
-        AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(result), transformer, currGen);
+        AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(result),
+                transformer, currGen);
         // TODO: What should be done if the value was already deleted?
         if (res.getKey() != RETRY) {
             return Result.withValue(res.getValue());
@@ -469,7 +491,6 @@ class InternalOakMap<K, V> {
         //TODO: Value causing the failure moved... what to do?
         throw new UnsupportedOperationException();
     }
-
 
     boolean putIfAbsentComputeIfPresent(K key, V value, Consumer<OakWBuffer> computer) {
 
@@ -479,7 +500,9 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return putIfAbsentComputeIfPresent(key, value, computer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return putIfAbsentComputeIfPresent(key, value, computer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp != null && lookUp.valueSlice != null) {
             GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
@@ -487,8 +510,9 @@ class InternalOakMap<K, V> {
                 // compute was successful and handle wasn't found deleted; in case
                 // this handle was already found as deleted, continue to construct another handle
                 return false;
-            } else if (res == RETRY)
+            } else if (res == RETRY) {
                 return putIfAbsentComputeIfPresent(key, value, computer);
+            }
         }
 
         // if chunk is frozen or infant, we can't add to it
@@ -555,26 +579,33 @@ class InternalOakMap<K, V> {
         }
 
         long res = finishAfterPublishing(opData, c);
-        if (res != DELETED_VALUE)
+        if (res != DELETED_VALUE) {
             memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+        }
         return res == DELETED_VALUE;
     }
 
     private void finalizeRemove(K key, Chunk<K, V> c, Chunk.LookUp lookUp, int oldGeneration) {
         do {
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null, INVALID_GENERATION);
+            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null,
+                    INVALID_GENERATION);
             // publish
             if (!c.publish()) {
                 rebalance(c);
                 c = findChunk(key); // find chunk matching key
                 Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-                if (resultLookUpEntry.getKey() == RETRY) return;
-                lookUp = resultLookUpEntry.getValue();
-                if (lookUp == null) return;
-                if (lookUp.generation == oldGeneration)
-                    continue;
-                else
+                if (resultLookUpEntry.getKey() == RETRY) {
                     return;
+                }
+                lookUp = resultLookUpEntry.getValue();
+                if (lookUp == null) {
+                    return;
+                }
+                if (lookUp.generation == oldGeneration) {
+                    continue;
+                } else {
+                    return;
+                }
             }
             finishAfterPublishing(opData, c);
             return;
@@ -584,7 +615,9 @@ class InternalOakMap<K, V> {
     boolean zcRemove(K key) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return zcRemove(key);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return zcRemove(key);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
 
         if (lookUp == null || lookUp.valueSlice == null) {
@@ -613,14 +646,17 @@ class InternalOakMap<K, V> {
     }
 
     V remove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
-        // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may still be linked!
+        // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may
+        // still be linked!
         boolean logicallyDeleted = false;
         V v = null;
 
         while (true) {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
             Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-            if (resultLookUpEntry.getKey() == RETRY) return remove(key, oldValue, transformer);
+            if (resultLookUpEntry.getKey() == RETRY) {
+                return remove(key, oldValue, transformer);
+            }
             Chunk.LookUp lookUp = resultLookUpEntry.getValue();
 
             if (lookUp == null || lookUp.valueSlice == null) {
@@ -630,11 +666,13 @@ class InternalOakMap<K, V> {
             }
 
             if (logicallyDeleted) {
-                // This is the case where we logically deleted this entry (marked the handle as deleted), but someone reused
+                // This is the case where we logically deleted this entry (marked the handle as deleted), but someone
+                // reused
                 // the entry before we unlinked it. We have the previous value saved in v.
                 return v;
             } else {
-                V vv = (transformer != null) ? operator.transform(lookUp.valueSlice, transformer, lookUp.generation).getValue() : null;
+                V vv = (transformer != null) ?
+                        operator.transform(lookUp.valueSlice, transformer, lookUp.generation).getValue() : null;
 
                 if (oldValue != null && !oldValue.equals(vv)) {
                     // this is not the droid you're looking for
@@ -671,7 +709,8 @@ class InternalOakMap<K, V> {
 
             assert lookUp.entryIndex > 0;
             assert lookUp.valueStats > 0;
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null, INVALID_GENERATION);
+            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null,
+                    INVALID_GENERATION);
 
             // publish
             if (!c.publish()) {
@@ -692,13 +731,15 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return get(key);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return get(key);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
-        ByteBuffer keyBuffer = c.readKey(lookUp.entryIndex);
-        return new OakRValueBufferImpl(lookUp.valueSlice.readOnly(), lookUp.generation, keyBuffer, operator);
+        long keyStats = c.readKeyStats(lookUp.entryIndex);
+        return new OakRValueBufferImpl(lookUp.valueStats, lookUp.generation, keyStats, operator, memoryManager);
     }
 
     <T> T getValueTransformation(K key, Function<ByteBuffer, T> transformer) {
@@ -708,15 +749,19 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return getValueTransformation(key, transformer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return getValueTransformation(key, transformer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
 
-        AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
-        if (res.getKey() == RETRY)
+        AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer,
+                lookUp.generation);
+        if (res.getKey() == RETRY) {
             return getValueTransformation(key, transformer);
+        }
         return res.getValue();
     }
 
@@ -732,7 +777,9 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return getKeyTransformation(key, transformer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return getKeyTransformation(key, transformer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
@@ -748,7 +795,9 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key);
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return getKey(key);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return getKey(key);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
         if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
@@ -810,12 +859,18 @@ class InternalOakMap<K, V> {
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return computeIfPresent(key, computer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return computeIfPresent(key, computer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp == null || lookUp.valueSlice == null) return false;
+        if (lookUp == null || lookUp.valueSlice == null) {
+            return false;
+        }
 
         GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
-        if (res == RETRY) return computeIfPresent(key, computer);
+        if (res == RETRY) {
+            return computeIfPresent(key, computer);
+        }
         return res == TRUE;
     }
 
@@ -829,27 +884,39 @@ class InternalOakMap<K, V> {
     V replace(K key, V value, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return replace(key, value, valueDeserializeTransformer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return replace(key, value, valueDeserializeTransformer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp == null || lookUp.valueSlice == null)
+        if (lookUp == null || lookUp.valueSlice == null) {
             return null;
+        }
         // will return null if handle was deleted between prior lookup and the next call
-        AbstractMap.SimpleEntry<GemmValueUtils.Result, V> result = operator.exchange(c, lookUp, value, valueDeserializeTransformer, valueSerializer, memoryManager);
-        if (result.getKey() == RETRY) return replace(key, value, valueDeserializeTransformer);
+        AbstractMap.SimpleEntry<GemmValueUtils.Result, V> result = operator.exchange(c, lookUp, value,
+                valueDeserializeTransformer, valueSerializer, memoryManager);
+        if (result.getKey() == RETRY) {
+            return replace(key, value, valueDeserializeTransformer);
+        }
         return result.getValue();
     }
 
     boolean replace(K key, V oldValue, V newValue, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
         Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) return replace(key, oldValue, newValue, valueDeserializeTransformer);
+        if (resultLookUpEntry.getKey() == RETRY) {
+            return replace(key, oldValue, newValue, valueDeserializeTransformer);
+        }
         Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp == null || lookUp.valueSlice == null)
+        if (lookUp == null || lookUp.valueSlice == null) {
             return false;
+        }
 
         // res can be null if handle was deleted between lookup and the next call
-        GemmValueUtils.Result res = operator.compareExchange(c, lookUp, oldValue, newValue, valueDeserializeTransformer, valueSerializer, memoryManager);
-        if (res == RETRY) return replace(key, oldValue, newValue, valueDeserializeTransformer);
+        GemmValueUtils.Result res = operator.compareExchange(c, lookUp, oldValue, newValue,
+                valueDeserializeTransformer, valueSerializer, memoryManager);
+        if (res == RETRY) {
+            return replace(key, oldValue, newValue, valueDeserializeTransformer);
+        }
         return res == TRUE;
     }
 
@@ -889,6 +956,20 @@ class InternalOakMap<K, V> {
 
     /*-------------- Iterators --------------*/
 
+    private Slice getValueSliceFromStats(long valueStats) {
+        int[] valueArray = longToInts(valueStats);
+        if (Chunk.isValueThere(valueArray)) {
+            return null;
+        }
+        return memoryManager.getSliceFromBlockID(valueArray[0] >>> VALUE_BLOCK_SHIFT, valueArray[1],
+                valueArray[0] & VALUE_LENGTH_MASK);
+    }
+
+    private ByteBuffer getKeyBufferFromStats(long keyStats) {
+        int[] keyArray = longToInts(keyStats);
+        return memoryManager.getByteBufferFromBlockID(keyArray[0] >>> KEY_BLOCK_SHIFT, keyArray[1],
+                keyArray[0] & KEY_LENGTH_MASK);
+    }
 
     private static class IteratorState<K, V> {
 
@@ -961,8 +1042,9 @@ class InternalOakMap<K, V> {
          */
         Iter(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
             if (lo != null && hi != null &&
-                    comparator.compare(lo, hi) > 0)
+                    comparator.compare(lo, hi) > 0) {
                 throw new IllegalArgumentException("inconsistent range");
+            }
 
             this.lo = lo;
             this.loInclusive = loInclusive;
@@ -1027,8 +1109,10 @@ class InternalOakMap<K, V> {
         /**
          * Advances next to higher entry.
          * Return previous index
+         *
+         * @return
          */
-        Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> advance(boolean needsValue) {
+        Map.Entry<Long, Map.Entry<Integer, Long>> advance(boolean needsValue) {
 
             if (state == null) {
                 throw new NoSuchElementException();
@@ -1040,13 +1124,14 @@ class InternalOakMap<K, V> {
                 initAfterRebalance();
             }
 
-            ByteBuffer bb = state.getChunk().readKey(state.getIndex()).slice();
-            Map.Entry<Slice, Integer> value = null;
+            // Key is duplicated
+            long keyStats = state.getChunk().readKeyStats(state.getIndex());
+            Map.Entry<Integer, Long> value = null;
             if (needsValue) {
-                value = state.getChunk().getConsistentValueFromEntry(state.getIndex());
+                value = state.getChunk().getConsistentValueStatsFromEntry(state.getIndex());
             }
             advanceState();
-            return new AbstractMap.SimpleImmutableEntry<>(bb, value);
+            return new AbstractMap.SimpleImmutableEntry<>(keyStats, value);
         }
 
         private void initState(boolean isDescending, K lowerBound, boolean lowerInclusive,
@@ -1056,10 +1141,11 @@ class InternalOakMap<K, V> {
             Chunk<K, V> nextChunk;
 
             if (!isDescending) {
-                if (lowerBound != null)
+                if (lowerBound != null) {
                     nextChunk = skiplist.floorEntry(lowerBound).getValue();
-                else
+                } else {
                     nextChunk = skiplist.floorEntry(minKey).getValue();
+                }
                 if (nextChunk != null) {
                     nextChunkIter = lowerBound != null ?
                             nextChunk.ascendingIter(lowerBound, lowerInclusive) : nextChunk.ascendingIter();
@@ -1140,14 +1226,15 @@ class InternalOakMap<K, V> {
 
         @Override
         public OakRBuffer next() {
-            Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> nextItem = advance(true);
-            ByteBuffer keyBuffer = nextItem.getKey();
-            Slice valueSlice = nextItem.getValue().getKey();
-            int generation = nextItem.getValue().getValue();
-            if (valueSlice == null)
+            Map.Entry<Long, Map.Entry<Integer, Long>> nextItem = advance(true);
+            long keyStats = nextItem.getKey();
+            long valueStats = nextItem.getValue().getValue();
+            int generation = nextItem.getValue().getKey();
+            if (longToInts(valueStats)[0] == INVALID_BLOCK_ID) {
                 return null;
+            }
 
-            return new OakRValueBufferImpl(valueSlice.readOnly(), generation, keyBuffer, operator);
+            return new OakRValueBufferImpl(valueStats, generation, keyStats, operator, memoryManager);
         }
     }
 
@@ -1162,14 +1249,18 @@ class InternalOakMap<K, V> {
         }
 
         public T next() {
-            Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> nextItem = advance(true);
-            ByteBuffer keyBuffer = nextItem.getKey();
-            Slice valueSlice = nextItem.getValue().getKey();
-            int generation = nextItem.getValue().getValue();
-            if (valueSlice == null)
+            Map.Entry<Long, Map.Entry<Integer, Long>> nextItem = advance(true);
+            long keyStats = nextItem.getKey();
+            long valueStats = nextItem.getValue().getValue();
+            Slice valueSlice = getValueSliceFromStats(valueStats);
+            int generation = nextItem.getValue().getKey();
+            if (valueSlice == null) {
                 return null;
-            AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(valueSlice, transformer, generation);
-            return (res.getKey() == RETRY) ? getValueTransformation(keyBuffer, transformer) : res.getValue();
+            }
+            AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(valueSlice, transformer,
+                    generation);
+            return (res.getKey() == RETRY) ? getValueTransformation(getKeyBufferFromStats(keyStats),
+                    transformer) : res.getValue();
         }
     }
 
@@ -1180,16 +1271,16 @@ class InternalOakMap<K, V> {
         }
 
         public Map.Entry<OakRBuffer, OakRBuffer> next() {
-            Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> nextItem = advance(true);
-            ByteBuffer keyBuffer = nextItem.getKey();
-            Slice valueSlice = nextItem.getValue().getKey();
-            int generation = nextItem.getValue().getValue();
-            if (valueSlice == null) {
+            Map.Entry<Long, Map.Entry<Integer, Long>> nextItem = advance(true);
+            long keyStats = nextItem.getKey();
+            long valueStats = nextItem.getValue().getValue();
+            int generation = nextItem.getValue().getKey();
+            if (Chunk.isValueThere(longToInts(valueStats))) {
                 return null;
             }
             return new AbstractMap.SimpleImmutableEntry<>(
-                    new OakRKeyBufferImpl(keyBuffer.asReadOnlyBuffer()),
-                    new OakRValueBufferImpl(valueSlice.readOnly(), generation, keyBuffer, operator));
+                    new OakRKeyBufferImpl(keyStats, memoryManager),
+                    new OakRValueBufferImpl(valueStats, generation, keyStats, operator, memoryManager));
         }
     }
 
@@ -1205,24 +1296,28 @@ class InternalOakMap<K, V> {
         }
 
         public T next() {
-            Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> nextItem = advance(true);
-            ByteBuffer keyBuffer = nextItem.getKey();
-            Slice valueSlice = nextItem.getValue().getKey();
-            int generation = nextItem.getValue().getValue();
+            Map.Entry<Long, Map.Entry<Integer, Long>> nextItem = advance(true);
+            long keyStats = nextItem.getKey();
+            long valueStats = nextItem.getValue().getValue();
+            Slice valueSlice = getValueSliceFromStats(valueStats);
+            int generation = nextItem.getValue().getKey();
             if (valueSlice == null) {
                 return null;
             }
             GemmValueUtils.Result res = operator.lockRead(valueSlice, generation);
             ByteBuffer serializedValue;
-            if (res == FALSE)
+            if (res == FALSE) {
                 return null;
-            else if (res == RETRY)
-                serializedValue = getValueTransformation(keyBuffer, byteBuffer -> byteBuffer);
-            else
+            } else if (res == RETRY) {
+                serializedValue = getValueTransformation(getKeyBufferFromStats(keyStats), byteBuffer -> byteBuffer);
+            } else {
                 serializedValue = operator.getActualValue(valueSlice.readOnly());
-            Map.Entry<ByteBuffer, ByteBuffer> entry = new AbstractMap.SimpleEntry<>(keyBuffer, serializedValue);
+            }
+            Map.Entry<ByteBuffer, ByteBuffer> entry =
+                    new AbstractMap.SimpleEntry<>(getKeyBufferFromStats(keyStats).asReadOnlyBuffer(), serializedValue);
 
             T transformation = transformer.apply(entry);
+            valueSlice = getValueSliceFromStats(valueStats);
             operator.unlockRead(valueSlice, generation);
             return transformation;
         }
@@ -1237,8 +1332,8 @@ class InternalOakMap<K, V> {
         @Override
         public OakRBuffer next() {
 
-            Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> pair = advance(false);
-            return new OakRKeyBufferImpl(pair.getKey().asReadOnlyBuffer());
+            Map.Entry<Long, Map.Entry<Integer, Long>> pair = advance(false);
+            return new OakRKeyBufferImpl(pair.getKey(), memoryManager);
 
         }
     }
@@ -1254,35 +1349,41 @@ class InternalOakMap<K, V> {
         }
 
         public T next() {
-            Map.Entry<ByteBuffer, Map.Entry<Slice, Integer>> pair = advance(false);
-            ByteBuffer serializedKey = pair.getKey();
-            return transformer.apply(serializedKey);
+            Map.Entry<Long, Map.Entry<Integer, Long>> pair = advance(false);
+            return transformer.apply(getKeyBufferFromStats(pair.getKey()).asReadOnlyBuffer());
         }
     }
 
     // Factory methods for iterators
 
-    Iterator<OakRBuffer> valuesBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+    Iterator<OakRBuffer> valuesBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,
+                                                  boolean isDescending) {
         return new ValueIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
-    Iterator<Map.Entry<OakRBuffer, OakRBuffer>> entriesBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+    Iterator<Map.Entry<OakRBuffer, OakRBuffer>> entriesBufferViewIterator(K lo, boolean loInclusive, K hi,
+                                                                          boolean hiInclusive, boolean isDescending) {
         return new EntryIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
-    Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+    Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,
+                                                boolean isDescending) {
         return new KeyIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
-    <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<ByteBuffer, T> transformer) {
+    <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,
+                                            boolean isDescending, Function<ByteBuffer, T> transformer) {
         return new ValueTransformIterator<>(lo, loInclusive, hi, hiInclusive, isDescending, transformer);
     }
 
-    <T> Iterator<T> entriesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<Map.Entry<ByteBuffer, ByteBuffer>, T> transformer) {
+    <T> Iterator<T> entriesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,
+                                             boolean isDescending,
+                                             Function<Map.Entry<ByteBuffer, ByteBuffer>, T> transformer) {
         return new EntryTransformIterator<>(lo, loInclusive, hi, hiInclusive, isDescending, transformer);
     }
 
-    <T> Iterator<T> keysTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, Function<ByteBuffer, T> transformer) {
+    <T> Iterator<T> keysTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending,
+                                          Function<ByteBuffer, T> transformer) {
         return new KeyTransformIterator<>(lo, loInclusive, hi, hiInclusive, isDescending, transformer);
     }
 

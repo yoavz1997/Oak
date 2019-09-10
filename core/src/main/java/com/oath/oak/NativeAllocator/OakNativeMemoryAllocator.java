@@ -32,7 +32,8 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
         }
     }
 
-    // When allocating n bytes and there are buffers in the free list, only free buffers of size <= n * RECLAIM_FACTOR will be recycled
+    // When allocating n bytes and there are buffers in the free list, only free buffers of size <= n *
+    // RECLAIM_FACTOR will be recycled
     // This parameter may be tuned for performance vs off-heap memory utilization
     private static final int RECLAIM_FACTOR = 2;
     public static final int INVALID_BLOCK_ID = 0;
@@ -43,7 +44,9 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
 
     // free list of Slices which can be reused - sorted by buffer size, then by unique hash
     private final ConcurrentSkipListSet<FreeChuck> freeList = new ConcurrentSkipListSet<>((x, y) -> {
-        if (x.length == y.length) return (int) (x.id - y.id);
+        if (x.length == y.length) {
+            return (int) (x.id - y.id);
+        }
         return (int) (x.length - y.length);
     });
     private final FreeChuck[] dummies = new FreeChuck[ThreadIndexCalculator.MAX_THREADS];
@@ -100,12 +103,16 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
         while (!freeList.isEmpty()) {
             myDummy.length = size;
             FreeChuck bestFit = freeList.higher(myDummy);
-            if (bestFit == null) break;
-            if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size))
+            if (bestFit == null) {
+                break;
+            }
+            if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size)) {
                 break;     // all remaining buffers are too big
+            }
             if (freeList.remove(bestFit)) {
-                if (stats != null)
+                if (stats != null) {
                     stats.reclaim(size);
+                }
                 return bestFit.slice;
             }
         }
@@ -149,13 +156,17 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
     @Deprecated
     public void free(ByteBuffer bb) {
         allocated.addAndGet(-(bb.remaining()));
-        if (stats != null) stats.release(bb);
+        if (stats != null) {
+            stats.release(bb);
+        }
         freeList.add(new FreeChuck(freeCounter.getAndIncrement(), bb.remaining(), new Slice(INVALID_BLOCK_ID, bb)));
     }
 
     public void freeSlice(Slice slice) {
         allocated.addAndGet(-(slice.getByteBuffer().remaining()));
-        if (stats != null) stats.release(slice.getByteBuffer());
+        if (stats != null) {
+            stats.release(slice.getByteBuffer());
+        }
         freeList.add(new FreeChuck(freeCounter.getAndIncrement(), slice.getByteBuffer().remaining(), slice));
     }
 
@@ -163,7 +174,9 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
     // Not thread safe, should be a single thread call. (?)
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return;
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         for (int i = 1; i <= numberOfBocks(); i++) {
             blocksProvider.returnBlock(blocksArray[i]);
         }

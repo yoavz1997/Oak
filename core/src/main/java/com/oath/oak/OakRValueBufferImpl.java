@@ -12,111 +12,143 @@ import java.util.ConcurrentModificationException;
 import java.util.Map;
 import java.util.function.Function;
 
+import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
+import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
 import static com.oath.oak.GemmValueUtils.Result.*;
 
 // remove header
 public class OakRValueBufferImpl implements OakRBuffer {
-    private final Slice valueSlice;
-    private final ByteBuffer keyBuffer;
-    private final ByteBuffer bb;
+    private final long valueStats;
+    private final long keyStats;
     private final int generation;
     private final GemmValueOperations operator;
+    private final GemmAllocator memoryManager;
 
-    OakRValueBufferImpl(Slice valueSlice, int generation, ByteBuffer keyBuffer, GemmValueOperations operator) {
-        this.valueSlice = valueSlice;
-        this.keyBuffer = keyBuffer;
-        this.bb = valueSlice.getByteBuffer();
-        this.generation = generation;
+    OakRValueBufferImpl(long valueStats, int valueGeneration, long keyStats, GemmValueOperations operator,
+                        GemmAllocator memoryManager) {
+        this.valueStats = valueStats;
+        this.keyStats = keyStats;
+        this.generation = valueGeneration;
         this.operator = operator;
+        this.memoryManager = memoryManager;
+    }
+
+    private Slice getValueSlice() {
+        int[] valueArray = UnsafeUtils.longToInts(valueStats);
+        return memoryManager.getSliceFromBlockID(valueArray[0] >>> VALUE_BLOCK_SHIFT, valueArray[1],
+                valueArray[0] & VALUE_LENGTH_MASK);
+    }
+
+    private ByteBuffer getByteBuffer() {
+        return getValueSlice().getByteBuffer();
     }
 
     private int valuePosition() {
-        return bb.position() + operator.getHeaderSize();
+        return UnsafeUtils.longToInts(valueStats)[1] + operator.getHeaderSize();
     }
 
     @Override
     public int capacity() {
-        start();
-        int capacity = bb.remaining() - operator.getHeaderSize();
-        end();
-        return capacity;
+        return (UnsafeUtils.longToInts(valueStats)[0] & VALUE_LENGTH_MASK) - operator.getHeaderSize();
     }
 
     @Override
     public byte get(int index) {
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        byte b = bb.get(index + valuePosition());
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        byte b = s.getByteBuffer().get(index + valuePosition());
+        end(s);
         return b;
     }
 
     @Override
     public ByteOrder order() {
         ByteOrder order;
-        start();
-        order = bb.order();
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        order = s.getByteBuffer().order();
+        end(s);
         return order;
     }
 
     @Override
     public char getChar(int index) {
         char c;
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        c = bb.getChar(index + valuePosition());
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        c = s.getByteBuffer().getChar(index + valuePosition());
+        end(s);
         return c;
     }
 
     @Override
     public short getShort(int index) {
-        short s;
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        s = bb.getShort(index + valuePosition());
-        end();
-        return s;
+        short i;
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        i = s.getByteBuffer().getShort(index + valuePosition());
+        end(s);
+        return i;
     }
 
     @Override
     public int getInt(int index) {
         int i;
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        i = bb.getInt(index + valuePosition());
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        i = s.getByteBuffer().getInt(index + valuePosition());
+        end(s);
         return i;
     }
 
     @Override
     public long getLong(int index) {
         long l;
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        l = bb.getLong(index + valuePosition());
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        l = s.getByteBuffer().getLong(index + valuePosition());
+        end(s);
         return l;
     }
 
     @Override
     public float getFloat(int index) {
         float f;
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        f = bb.getFloat(index + valuePosition());
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        f = s.getByteBuffer().getFloat(index + valuePosition());
+        end(s);
         return f;
     }
 
     @Override
     public double getDouble(int index) {
         double d;
-        start();
-        if (index < 0) throw new IndexOutOfBoundsException();
-        d = bb.getDouble(index + valuePosition());
-        end();
+        Slice s = getValueSlice();
+        start(s);
+        if (index < 0) {
+            throw new IndexOutOfBoundsException();
+        }
+        d = s.getByteBuffer().getDouble(index + valuePosition());
+        end(s);
         return d;
     }
 
@@ -131,34 +163,37 @@ public class OakRValueBufferImpl implements OakRBuffer {
         if (transformer == null) {
             throw new NullPointerException();
         }
-        Map.Entry<GemmValueUtils.Result, T> result = operator.transform(valueSlice, transformer, generation);
-        if (result.getKey() == FALSE)
+        Map.Entry<GemmValueUtils.Result, T> result = operator.transform(getValueSlice(), transformer, generation);
+        if (result.getKey() == FALSE) {
             throw new ConcurrentModificationException();
-        else if (result.getKey() == RETRY)
+        } else if (result.getKey() == RETRY) {
             throw new UnsupportedOperationException();
+        }
         return result.getValue();
     }
 
     @Override
     public void unsafeCopyBufferToIntArray(int srcPosition, int[] dstArray, int countInts) {
-        start();
-        ByteBuffer dup = bb.duplicate();
+        Slice s = getValueSlice();
+        start(s);
+        ByteBuffer dup = s.getByteBuffer().duplicate();
         dup.position(dup.position() + operator.getHeaderSize());
         operator.unsafeBufferToIntArrayCopy(dup, srcPosition, dstArray, countInts);
-        end();
+        end(s);
     }
 
-    private void start() {
+    private void start(Slice valueSlice) {
         GemmValueUtils.Result res = operator.lockRead(valueSlice, generation);
-        if (res == FALSE)
+        if (res == FALSE) {
             throw new ConcurrentModificationException();
+        }
         if (res == RETRY) {
             throw new UnsupportedOperationException();
             //getValueTransformation
         }
     }
 
-    private void end() {
+    private void end(Slice valueSlice) {
         operator.unlockRead(valueSlice, generation);
     }
 

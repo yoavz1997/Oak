@@ -31,4 +31,8 @@ public class Slice {
         buffer = buffer.asReadOnlyBuffer();
         return this;
     }
+
+    public Slice duplicate() {
+        return new Slice(blockID, buffer.duplicate());
+    }
 }
