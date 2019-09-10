@@ -8,6 +8,7 @@ package com.oath.oak;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 
 import static org.junit.Assert.assertEquals;
 
+@Ignore
 public class MultiThreadRangeTest {
 
     private OakMap<Integer, Integer> oak;
@@ -28,7 +30,7 @@ public class MultiThreadRangeTest {
     @Before
     public void init() {
         int maxBytesPerChunkItem = 100;
-        OakMapBuilder<Integer, Integer>builder = OakMapBuilder.getDefaultBuilder()
+        OakMapBuilder<Integer, Integer> builder = OakMapBuilder.getDefaultBuilder()
                 .setChunkMaxItems(maxItemsPerChunk)
                 .setChunkBytesPerItem(maxBytesPerChunkItem);
         oak = builder.build();
@@ -78,7 +80,9 @@ public class MultiThreadRangeTest {
         Random r = new Random();
         for (int i = 5 * maxItemsPerChunk; i > 0; ) {
             Integer j = r.nextInt(10 * maxItemsPerChunk);
-            if (oak.zc().putIfAbsent(j, j)) i--;
+            if (oak.zc().putIfAbsent(j, j)) {
+                i--;
+            }
         }
 
         for (int i = 0; i < NUM_THREADS; i++) {
@@ -91,7 +95,9 @@ public class MultiThreadRangeTest {
 
         int size = 0;
         for (Integer i = 0; i < 10 * maxItemsPerChunk; i++) {
-            if (oak.get(i) != null) size++;
+            if (oak.get(i) != null) {
+                size++;
+            }
         }
         assertEquals(5 * maxItemsPerChunk, size);
     }

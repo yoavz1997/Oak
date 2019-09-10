@@ -12,6 +12,7 @@ import java.util.function.Consumer;
 
 import static org.junit.Assert.*;
 
+@Ignore
 public class OakMapApiTest {
 
     private OakMap<Integer, Integer> oak;
@@ -267,9 +268,11 @@ public class OakMapApiTest {
     public void computeIfPresentZC() {
         Consumer<OakWBuffer> func = oakWBuffer -> oakWBuffer.putInt(0, oakWBuffer.getInt(0) * 2);
 
-        assertFalse("computeIfPresentZC should return false if mapping doesn't exist", oak.zc().computeIfPresent(0, func));
+        assertFalse("computeIfPresentZC should return false if mapping doesn't exist", oak.zc().computeIfPresent(0,
+                func));
         oak.put(0, 1);
-        assertTrue("computeIfPresent should return a non-null value if mapping exists", oak.zc().computeIfPresent(0, func));
+        assertTrue("computeIfPresent should return a non-null value if mapping exists", oak.zc().computeIfPresent(0,
+                func));
         Integer result = oak.get(0);
         assertNotNull("computeIfPresent should not remove an existing mapping", result);
         assertEquals("computeIfPresent should modify the existing mapping", 2, result.intValue());

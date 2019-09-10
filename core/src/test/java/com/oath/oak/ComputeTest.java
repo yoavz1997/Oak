@@ -6,6 +6,7 @@
 
 package com.oath.oak;
 
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.nio.ByteBuffer;
@@ -17,6 +18,7 @@ import java.util.function.Consumer;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+@Ignore
 public class ComputeTest {
 
     private static int NUM_THREADS = 16;
@@ -91,10 +93,11 @@ public class ComputeTest {
             for (int i = 0; i < keySize; i++) {
                 int i1 = buff1.getInt(buff1.position() + Integer.BYTES * i);
                 int i2 = buff2.getInt(buff2.position() + Integer.BYTES * i);
-                if (i1 > i2)
+                if (i1 > i2) {
                     return 1;
-                else if (i1 < i2)
+                } else if (i1 < i2) {
                     return -1;
+                }
             }
             return 0;
         }
@@ -153,10 +156,11 @@ public class ComputeTest {
                 int o = r.nextInt(2);
                 myKey.putInt(0, k);
                 myVal.putInt(0, k);
-                if (o % 2 == 0)
+                if (o % 2 == 0) {
                     oak.zc().computeIfPresent(myKey, computer);
-                else
+                } else {
                     oak.zc().putIfAbsent(myKey, myVal);
+                }
 
             }
 

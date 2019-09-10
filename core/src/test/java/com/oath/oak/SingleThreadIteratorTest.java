@@ -8,6 +8,7 @@ package com.oath.oak;
 
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.nio.ByteBuffer;
@@ -18,6 +19,7 @@ import static junit.framework.TestCase.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
+@Ignore
 public class SingleThreadIteratorTest {
 
     private OakMap<Integer, Integer> oak;
@@ -337,7 +339,8 @@ public class SingleThreadIteratorTest {
         }
 
 
-        try (OakMap<Integer, Integer> sub = oak.subMap((int) Math.round(0.1 * maxItemsPerChunk), true, (int) Math.round(2.3 * maxItemsPerChunk), false)) {
+        try (OakMap<Integer, Integer> sub = oak.subMap((int) Math.round(0.1 * maxItemsPerChunk), true,
+                (int) Math.round(2.3 * maxItemsPerChunk), false)) {
 
             iter = sub.values().iterator();
             i = (int) Math.round(0.1 * maxItemsPerChunk);

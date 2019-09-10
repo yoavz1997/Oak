@@ -2,6 +2,7 @@ package com.oath.oak;
 
 import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.concurrent.BrokenBarrierException;
@@ -13,6 +14,7 @@ import static com.oath.oak.GemmValueUtils.Result.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+@Ignore
 public class GemmValueUtilsTest {
     private GemmAllocator gemmAllocator;
     private Slice s;
