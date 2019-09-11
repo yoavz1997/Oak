@@ -37,7 +37,9 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     private boolean CAS(Slice s, int expectedLock, int newLock, int generation) {
         long expected = intsToLong(generation, expectedLock);
         long value = intsToLong(generation, newLock);
-        return unsafe.compareAndSwapLong(null, ((DirectBuffer) s.getByteBuffer()).address() + s.getByteBuffer().position(), reverseBytes(expected), reverseBytes(value));
+        return unsafe.compareAndSwapLong(null,
+                ((DirectBuffer) s.getByteBuffer()).address() + s.getByteBuffer().position(), reverseBytes(expected),
+                reverseBytes(value));
     }
 
     @Override
@@ -46,9 +48,12 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public <T> AbstractMap.SimpleEntry<Result, T> transform(Slice s, Function<ByteBuffer, T> transformer, int generation) {
+    public <T> AbstractMap.SimpleEntry<Result, T> transform(Slice s, Function<ByteBuffer, T> transformer,
+                                                            int generation) {
         Result result = lockRead(s, generation);
-        if (result != TRUE) return new AbstractMap.SimpleEntry<>(result, null);
+        if (result != TRUE) {
+            return new AbstractMap.SimpleEntry<>(result, null);
+        }
 
         T transformation = transformer.apply(getActualValue(s).asReadOnlyBuffer());
         unlockRead(s, generation);
@@ -56,15 +61,19 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+    public <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer,
+                             GemmAllocator memoryManager) {
         Result result = lockWrite(lookUp.valueSlice, lookUp.generation);
-        if (result != TRUE) return result;
+        if (result != TRUE) {
+            return result;
+        }
         Slice s = innerPut(chunk, lookUp, newVal, serializer, memoryManager);
         unlockWrite(s);
         return TRUE;
     }
 
-    private <K, V> Slice innerPut(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+    private <K, V> Slice innerPut(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer,
+                                  GemmAllocator memoryManager) {
         Slice s = lookUp.valueSlice;
         int capacity = serializer.calculateSize(newVal);
         if (capacity + getHeaderSize() > s.getByteBuffer().remaining()) {
@@ -82,15 +91,19 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
         s = memoryManager.allocateSlice(capacity + getHeaderSize());
         putInt(s, 0, lookUp.generation);
         putInt(s, getLockLocation(), LOCKED.value);
-        int valueBlockAndLength = (s.getBlockID() << VALUE_BLOCK_SHIFT) | ((capacity + getHeaderSize()) & VALUE_LENGTH_MASK);
-        assert chunk.longCasEntriesArray(lookUp.entryIndex, Chunk.OFFSET.VALUE_STATS, lookUp.valueStats, UnsafeUtils.intsToLong(valueBlockAndLength, s.getByteBuffer().position()));
+        int valueBlockAndLength =
+                (s.getBlockID() << VALUE_BLOCK_SHIFT) | ((capacity + getHeaderSize()) & VALUE_LENGTH_MASK);
+        assert chunk.longCasEntriesArray(lookUp.entryIndex, Chunk.OFFSET.VALUE_STATS, lookUp.valueStats,
+                UnsafeUtils.intsToLong(valueBlockAndLength, s.getByteBuffer().position()));
         return s;
     }
 
     @Override
     public Result compute(Slice s, Consumer<OakWBuffer> computer, int generation) {
         Result result = lockWrite(s, generation);
-        if (result != TRUE) return result;
+        if (result != TRUE) {
+            return result;
+        }
         computer.accept(new OakWBufferImpl(s, this));
         unlockWrite(s);
         return TRUE;
@@ -99,15 +112,22 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     @Override
     public Result remove(Slice s, GemmAllocator memoryManager, int generation) {
         Result result = deleteValue(s, generation);
-        if (result != TRUE) return result;
+        if (result != TRUE) {
+            return result;
+        }
         memoryManager.releaseSlice(s);
         return TRUE;
     }
 
     @Override
-    public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+    public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value,
+                                                              Function<ByteBuffer, V> valueDeserializeTransformer,
+                                                              OakSerializer<V> serializer,
+                                                              GemmAllocator memoryManager) {
         Result result = lockWrite(lookUp.valueSlice, lookUp.generation);
-        if (result != TRUE) return new AbstractMap.SimpleEntry<>(result, null);
+        if (result != TRUE) {
+            return new AbstractMap.SimpleEntry<>(result, null);
+        }
         V oldValue = serializer.deserialize(getActualValue(lookUp.valueSlice));
         Slice s = innerPut(chunk, lookUp, value, serializer, memoryManager);
         unlockWrite(s);
@@ -115,9 +135,13 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     }
 
     @Override
-    public <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, GemmAllocator memoryManager) {
+    public <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value,
+                                         Function<ByteBuffer, V> valueDeserializeTransformer,
+                                         OakSerializer<V> serializer, GemmAllocator memoryManager) {
         Result result = lockWrite(lookUp.valueSlice, lookUp.generation);
-        if (result != TRUE) return result;
+        if (result != TRUE) {
+            return result;
+        }
         V oldValue = serializer.deserialize(getActualValue(lookUp.valueSlice));
         if (!oldValue.equals(expected)) {
             unlockWrite(lookUp.valueSlice);
@@ -164,10 +188,19 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
         int lockState;
         do {
             int oldGeneration = getInt(s, 0);
-            if (oldGeneration != generation) return Result.RETRY;
+            if (oldGeneration != generation) {
+                return Result.RETRY;
+            }
             lockState = getInt(s, getLockLocation());
-            if (oldGeneration != getInt(s, 0)) return Result.RETRY;
-            if (!isValueThere(lockState)) return Result.FALSE;
+            if (oldGeneration != getInt(s, 0)) {
+                return Result.RETRY;
+            }
+            if (lockState == MOVED.value) {
+                return Result.RETRY;
+            }
+            if (lockState == DELETED.value) {
+                return TRUE;
+            }
             lockState &= ~LOCK_MASK;
         } while (!CAS(s, lockState, lockState + (1 << LOCK_SHIFT), generation));
         return TRUE;
@@ -187,10 +220,19 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     public Result lockWrite(Slice s, int generation) {
         do {
             int oldGeneration = getInt(s, 0);
-            if (oldGeneration != generation) return Result.RETRY;
+            if (oldGeneration != generation) {
+                return Result.RETRY;
+            }
             int lockState = getInt(s, getLockLocation());
-            if (oldGeneration != getInt(s, 0)) return Result.RETRY;
-            if (!isValueThere(lockState)) return Result.FALSE;
+            if (oldGeneration != getInt(s, 0)) {
+                return Result.RETRY;
+            }
+            if (lockState == MOVED.value) {
+                return Result.RETRY;
+            }
+            if (lockState == DELETED.value) {
+                return TRUE;
+            }
         } while (!CAS(s, FREE.value, LOCKED.value, generation));
         return TRUE;
     }
@@ -205,26 +247,39 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     public Result deleteValue(Slice s, int generation) {
         do {
             int oldGeneration = getInt(s, 0);
-            if (oldGeneration != generation) return Result.RETRY;
+            if (oldGeneration != generation) {
+                return Result.RETRY;
+            }
             int lockState = getInt(s, getLockLocation());
-            if (oldGeneration != getInt(s, 0)) return Result.RETRY;
-            if (!isValueThere(lockState)) return Result.FALSE;
+            if (oldGeneration != getInt(s, 0)) {
+                return Result.RETRY;
+            }
+            if (lockState == MOVED.value) {
+                return Result.RETRY;
+            }
+            if (lockState == DELETED.value) {
+                return TRUE;
+            }
         } while (!CAS(s, FREE.value, DELETED.value, generation));
         return TRUE;
-    }
-
-    private boolean isValueThere(int lockState) {
-        return lockState != DELETED.value && lockState != MOVED.value;
     }
 
     @Override
     public Result isValueDeleted(Slice s, int generation) {
         int oldGeneration = getInt(s, 0);
-        if (oldGeneration != generation) return Result.RETRY;
+        if (oldGeneration != generation) {
+            return Result.RETRY;
+        }
         int lockState = getInt(s, getLockLocation());
-        if (oldGeneration != getInt(s, 0)) return Result.RETRY;
-        if (lockState == MOVED.value) return Result.RETRY;
-        if (lockState == DELETED.value) return TRUE;
+        if (oldGeneration != getInt(s, 0)) {
+            return Result.RETRY;
+        }
+        if (lockState == MOVED.value) {
+            return Result.RETRY;
+        }
+        if (lockState == DELETED.value) {
+            return TRUE;
+        }
         return Result.FALSE;
     }
 

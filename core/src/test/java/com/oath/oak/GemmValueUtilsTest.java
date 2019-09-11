@@ -29,6 +29,7 @@ public class GemmValueUtilsTest {
     public void testCannotReadLockDeleted() {
         System.out.println("STARTED testCannotReadLockDeleted");
         assertEquals(TRUE, operator.deleteValue(s, 0));
+        System.out.println("Successfully deleted");
         assertEquals(FALSE, operator.lockRead(s, 0));
         System.out.println("ENDED testCannotReadLockDeleted");
     }
