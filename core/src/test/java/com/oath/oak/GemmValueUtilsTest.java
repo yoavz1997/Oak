@@ -27,31 +27,40 @@ public class GemmValueUtilsTest {
 
     @Test
     public void testCannotReadLockDeleted() {
+        System.out.println("STARTED testCannotReadLockDeleted");
         assertEquals(TRUE, operator.deleteValue(s, 0));
         assertEquals(FALSE, operator.lockRead(s, 0));
+        System.out.println("ENDED testCannotReadLockDeleted");
     }
 
     @Test
     public void testCannotWriteLockDeleted() {
+        System.out.println("STARTED testCannotWriteLockDeleted");
         assertEquals(TRUE, operator.deleteValue(s, 0));
         assertEquals(FALSE, operator.lockWrite(s, 0));
+        System.out.println("ENDED testCannotWriteLockDeleted");
     }
 
     @Test
     public void testCannotDeletedMultipleTimes() {
+        System.out.println("STARTED testCannotDeletedMultipleTimes");
         assertEquals(TRUE, operator.deleteValue(s, 0));
         assertEquals(FALSE, operator.deleteValue(s, 0));
+        System.out.println("ENDED testCannotDeletedMultipleTimes");
     }
 
     @Test
     public void testCanReadLockMultipleTimes() {
+        System.out.println("STARTED testCanReadLockMultipleTimes");
         for (int i = 0; i < 10000; i++) {
             assertEquals(TRUE, operator.lockRead(s, 0));
         }
+        System.out.println("ENDED testCanReadLockMultipleTimes");
     }
 
     @Test
     public void testCannotWriteLockReadLocked() throws InterruptedException {
+        System.out.println("STARTED testCannotWriteLockReadLocked");
         AtomicInteger flag = new AtomicInteger(0);
         CyclicBarrier barrier = new CyclicBarrier(3);
         Thread writer = new Thread(() -> {
@@ -86,10 +95,12 @@ public class GemmValueUtilsTest {
         operator.unlockRead(s, 0);
         reader.join();
         writer.join();
+        System.out.println("ENDED testCannotWriteLockReadLocked");
     }
 
     @Test
     public void testCannotDeletedReadLocked() throws InterruptedException {
+        System.out.println("STARTED testCannotDeletedReadLocked");
         AtomicInteger flag = new AtomicInteger(0);
         CyclicBarrier barrier = new CyclicBarrier(3);
         Thread deleter = new Thread(() -> {
@@ -124,10 +135,12 @@ public class GemmValueUtilsTest {
         operator.unlockRead(s, 0);
         reader.join();
         deleter.join();
+        System.out.println("ENDED testCannotDeletedReadLocked");
     }
 
     @Test
     public void testCannotReadLockWriteLocked() throws InterruptedException {
+        System.out.println("STARTED testCannotReadLockWriteLocked");
         AtomicBoolean flag = new AtomicBoolean(false);
         CyclicBarrier barrier = new CyclicBarrier(2);
         Thread reader = new Thread(() -> {
@@ -150,10 +163,12 @@ public class GemmValueUtilsTest {
         flag.set(true);
         operator.unlockWrite(s);
         reader.join();
+        System.out.println("ENDED testCannotReadLockWriteLocked");
     }
 
     @Test
     public void testCannotWriteLockMultipleTimes() throws InterruptedException {
+        System.out.println("STARTED testCannotWriteLockMultipleTimes");
         AtomicBoolean flag = new AtomicBoolean(false);
         CyclicBarrier barrier = new CyclicBarrier(2);
         Thread writer = new Thread(() -> {
@@ -176,10 +191,12 @@ public class GemmValueUtilsTest {
         flag.set(true);
         operator.unlockWrite(s);
         writer.join();
+        System.out.println("ENDED testCannotWriteLockMultipleTimes");
     }
 
     @Test
     public void testCannotDeletedWriteLocked() throws InterruptedException {
+        System.out.println("STARTED testCannotDeletedWriteLocked");
         AtomicBoolean flag = new AtomicBoolean(false);
         CyclicBarrier barrier = new CyclicBarrier(2);
         Thread deleter = new Thread(() -> {
@@ -202,6 +219,7 @@ public class GemmValueUtilsTest {
         flag.set(true);
         operator.unlockWrite(s);
         deleter.join();
+        System.out.println("ENDED testCannotDeletedWriteLocked");
     }
 
     private void changeGeneration() {
@@ -212,16 +230,22 @@ public class GemmValueUtilsTest {
 
     @Test
     public void testCannotReadLockDifferentGeneration() {
+        System.out.println("STARTED testCannotReadLockDifferentGeneration");
         assertEquals(RETRY, operator.lockRead(s, 1));
+        System.out.println("ENDED testCannotReadLockDifferentGeneration");
     }
 
     @Test
     public void testCannotWriteLockDifferentGeneration() {
+        System.out.println("STARTED testCannotWriteLockDifferentGeneration");
         assertEquals(RETRY, operator.lockWrite(s, 1));
+        System.out.println("ENDED testCannotWriteLockDifferentGeneration");
     }
 
     @Test
     public void testCannotDeletedDifferentGeneration() {
+        System.out.println("STARTED testCannotDeletedDifferentGeneration");
         assertEquals(RETRY, operator.deleteValue(s, 1));
+        System.out.println("ENDED testCannotDeletedDifferentGeneration");
     }
 }
