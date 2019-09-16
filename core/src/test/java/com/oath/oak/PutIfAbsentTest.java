@@ -22,7 +22,7 @@ public class PutIfAbsentTest {
     private OakMap<Integer, Integer> oak;
     private CountDownLatch startSignal;
     private List<Future<Integer>> threads;
-    private final int NUM_THREADS = 16;
+    private final int NUM_THREADS = 31;
 
     @Before
     public void init() {

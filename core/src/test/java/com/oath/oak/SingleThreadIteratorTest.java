@@ -337,7 +337,8 @@ public class SingleThreadIteratorTest {
         }
 
 
-        try (OakMap<Integer, Integer> sub = oak.subMap((int) Math.round(0.1 * maxItemsPerChunk), true, (int) Math.round(2.3 * maxItemsPerChunk), false)) {
+        try (OakMap<Integer, Integer> sub = oak.subMap((int) Math.round(0.1 * maxItemsPerChunk), true,
+                (int) Math.round(2.3 * maxItemsPerChunk), false)) {
 
             iter = sub.values().iterator();
             i = (int) Math.round(0.1 * maxItemsPerChunk);
@@ -358,10 +359,10 @@ public class SingleThreadIteratorTest {
                 assertEquals((int) Math.round(0.1 * maxItemsPerChunk), i.intValue());
 
                 for (i = maxItemsPerChunk; i < 2 * maxItemsPerChunk; i++) {
-                    ByteBuffer bb = ByteBuffer.allocate(4);
-                    bb.putInt(i);
-                    bb.flip();
-                    sub.zc().remove(bb);
+//                    ByteBuffer bb = ByteBuffer.allocate(4);
+//                    bb.putInt(i);
+//                    bb.flip();
+                    sub.zc().remove(i);
                 }
             }
 

@@ -4,7 +4,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.nio.ByteBuffer;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.Map;
@@ -217,7 +216,9 @@ public class IteratorModificationTest {
                 e.printStackTrace();
             }
             try {
-                iterator.next();
+                if (iterator.next() == null) {
+                    passed.set(true);
+                }
             } catch (ConcurrentModificationException e) {
                 passed.set(true);
             }
