@@ -22,31 +22,31 @@ public class GemmValueUtilsTest {
     public void init() {
         gemmAllocator = new GemmAllocator(new OakNativeMemoryAllocator(128));
         s = gemmAllocator.allocateSlice(16);
-        s.getByteBuffer().putInt(s.getByteBuffer().position(), 0);
+        s.getByteBuffer().putInt(s.getByteBuffer().position(), 1);
     }
 
     @Test
     public void testCannotReadLockDeleted() {
-        assertEquals(TRUE, operator.deleteValue(s, 0));
-        assertEquals(FALSE, operator.lockRead(s, 0));
+        assertEquals(TRUE, operator.deleteValue(s, 1));
+        assertEquals(FALSE, operator.lockRead(s, 1));
     }
 
     @Test
     public void testCannotWriteLockDeleted() {
-        assertEquals(TRUE, operator.deleteValue(s, 0));
-        assertEquals(FALSE, operator.lockWrite(s, 0));
+        assertEquals(TRUE, operator.deleteValue(s, 1));
+        assertEquals(FALSE, operator.lockWrite(s, 1));
     }
 
     @Test
     public void testCannotDeletedMultipleTimes() {
-        assertEquals(TRUE, operator.deleteValue(s, 0));
-        assertEquals(FALSE, operator.deleteValue(s, 0));
+        assertEquals(TRUE, operator.deleteValue(s, 1));
+        assertEquals(FALSE, operator.deleteValue(s, 1));
     }
 
     @Test
     public void testCanReadLockMultipleTimes() {
         for (int i = 0; i < 10000; i++) {
-            assertEquals(TRUE, operator.lockRead(s, 0));
+            assertEquals(TRUE, operator.lockRead(s, 1));
         }
     }
 
@@ -60,7 +60,7 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.lockWrite(s, 0));
+            assertEquals(TRUE, operator.lockWrite(s, 1));
             assertEquals(2, flag.get());
         });
         Thread reader = new Thread(() -> {
@@ -69,11 +69,11 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.lockRead(s, 0));
+            assertEquals(TRUE, operator.lockRead(s, 1));
             flag.incrementAndGet();
-            operator.unlockRead(s, 0);
+            operator.unlockRead(s, 1);
         });
-        assertEquals(TRUE, operator.lockRead(s, 0));
+        assertEquals(TRUE, operator.lockRead(s, 1));
         writer.start();
         reader.start();
         try {
@@ -83,7 +83,7 @@ public class GemmValueUtilsTest {
         }
         Thread.sleep(2000);
         flag.incrementAndGet();
-        operator.unlockRead(s, 0);
+        operator.unlockRead(s, 1);
         reader.join();
         writer.join();
     }
@@ -98,7 +98,7 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.deleteValue(s, 0));
+            assertEquals(TRUE, operator.deleteValue(s, 1));
             assertEquals(2, flag.get());
         });
         Thread reader = new Thread(() -> {
@@ -107,11 +107,11 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.lockRead(s, 0));
+            assertEquals(TRUE, operator.lockRead(s, 1));
             flag.incrementAndGet();
-            operator.unlockRead(s, 0);
+            operator.unlockRead(s, 1);
         });
-        assertEquals(TRUE, operator.lockRead(s, 0));
+        assertEquals(TRUE, operator.lockRead(s, 1));
         deleter.start();
         reader.start();
         try {
@@ -121,7 +121,7 @@ public class GemmValueUtilsTest {
         }
         Thread.sleep(2000);
         flag.incrementAndGet();
-        operator.unlockRead(s, 0);
+        operator.unlockRead(s, 1);
         reader.join();
         deleter.join();
     }
@@ -136,10 +136,10 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.lockRead(s, 0));
+            assertEquals(TRUE, operator.lockRead(s, 1));
             assertTrue(flag.get());
         });
-        assertEquals(TRUE, operator.lockWrite(s, 0));
+        assertEquals(TRUE, operator.lockWrite(s, 1));
         reader.start();
         try {
             barrier.await();
@@ -162,10 +162,10 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.lockWrite(s, 0));
+            assertEquals(TRUE, operator.lockWrite(s, 1));
             assertTrue(flag.get());
         });
-        assertEquals(TRUE, operator.lockWrite(s, 0));
+        assertEquals(TRUE, operator.lockWrite(s, 1));
         writer.start();
         try {
             barrier.await();
@@ -188,10 +188,10 @@ public class GemmValueUtilsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            assertEquals(TRUE, operator.deleteValue(s, 0));
+            assertEquals(TRUE, operator.deleteValue(s, 1));
             assertTrue(flag.get());
         });
-        assertEquals(TRUE, operator.lockWrite(s, 0));
+        assertEquals(TRUE, operator.lockWrite(s, 1));
         deleter.start();
         try {
             barrier.await();
@@ -212,16 +212,16 @@ public class GemmValueUtilsTest {
 
     @Test
     public void testCannotReadLockDifferentGeneration() {
-        assertEquals(RETRY, operator.lockRead(s, 1));
+        assertEquals(RETRY, operator.lockRead(s, 2));
     }
 
     @Test
     public void testCannotWriteLockDifferentGeneration() {
-        assertEquals(RETRY, operator.lockWrite(s, 1));
+        assertEquals(RETRY, operator.lockWrite(s, 2));
     }
 
     @Test
     public void testCannotDeletedDifferentGeneration() {
-        assertEquals(RETRY, operator.deleteValue(s, 1));
+        assertEquals(RETRY, operator.deleteValue(s, 2));
     }
 }

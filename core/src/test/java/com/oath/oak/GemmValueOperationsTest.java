@@ -23,7 +23,7 @@ public class GemmValueOperationsTest {
     public void init() {
         gemmAllocator = new GemmAllocator(new OakNativeMemoryAllocator(128));
         s = gemmAllocator.allocateSlice(20);
-        putInt(0, 0);
+        putInt(0, 1);
         putInt(operator.getLockLocation(), 0);
     }
 
@@ -41,19 +41,20 @@ public class GemmValueOperationsTest {
         putInt(12, 20);
         putInt(16, 30);
 
-        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0) + byteBuffer.getInt(4) + byteBuffer.getInt(8), 0);
+        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s,
+                byteBuffer -> byteBuffer.getInt(0) + byteBuffer.getInt(4) + byteBuffer.getInt(8), 1);
         assertEquals(TRUE, result.getKey());
         assertEquals(60, result.getValue().intValue());
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void transformUpperBoundTest() {
-        operator.transform(s, byteBuffer -> byteBuffer.getInt(12), 0);
+        operator.transform(s, byteBuffer -> byteBuffer.getInt(12), 1);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void transformLowerBoundTest() {
-        operator.transform(s, byteBuffer -> byteBuffer.getInt(-4), 0);
+        operator.transform(s, byteBuffer -> byteBuffer.getInt(-4), 1);
     }
 
     @Test(timeout = 5000)
@@ -67,11 +68,12 @@ public class GemmValueOperationsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(4), 0);
+            Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s,
+                    byteBuffer -> byteBuffer.getInt(4), 1);
             assertEquals(TRUE, result.getKey());
             assertEquals(randomValue, result.getValue().intValue());
         });
-        assertEquals(TRUE, operator.lockWrite(s, 0));
+        assertEquals(TRUE, operator.lockWrite(s, 1));
         transformer.start();
         try {
             barrier.await();
@@ -100,7 +102,8 @@ public class GemmValueOperationsTest {
                     e.printStackTrace();
                 }
                 int index = new Random().nextInt(3) * 4;
-                Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(index), 0);
+                Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s,
+                        byteBuffer -> byteBuffer.getInt(index), 1);
                 assertEquals(TRUE, result.getKey());
                 assertEquals(10 + index, result.getValue().intValue());
             });
@@ -117,20 +120,20 @@ public class GemmValueOperationsTest {
 
     @Test
     public void cannotTransformDeletedTest() {
-        operator.deleteValue(s, 0);
-        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 0);
+        operator.deleteValue(s, 1);
+        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 1);
         assertEquals(FALSE, result.getKey());
     }
 
     @Test
     public void cannotTransformedDifferentGenerationTest() {
-        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 1);
+        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 2);
         assertEquals(RETRY, result.getKey());
     }
 
     @Test
     public void putWithNoResizeTest() {
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 0);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
         Random random = new Random();
         int[] randomValues = new int[3];
         for (int i = 0; i < randomValues.length; i++) {
@@ -161,7 +164,7 @@ public class GemmValueOperationsTest {
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void putUpperBoundTest() {
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 0);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
         operator.put(null, lookUp, 5, new OakSerializer<Integer>() {
             @Override
             public void serialize(Integer object, ByteBuffer targetBuffer) {
@@ -182,7 +185,7 @@ public class GemmValueOperationsTest {
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void putLowerBoundTest() {
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 0);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
         operator.put(null, lookUp, 5, new OakSerializer<Integer>() {
             @Override
             public void serialize(Integer object, ByteBuffer targetBuffer) {
@@ -203,7 +206,7 @@ public class GemmValueOperationsTest {
 
     @Test
     public void cannotPutReadLockedTest() throws InterruptedException {
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 0);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
         CyclicBarrier barrier = new CyclicBarrier(2);
         Random random = new Random();
         int[] randomValues = new int[3];
@@ -235,7 +238,7 @@ public class GemmValueOperationsTest {
                 }
             }, gemmAllocator);
         });
-        operator.lockRead(s, 0);
+        operator.lockRead(s, 1);
         putter.start();
         try {
             barrier.await();
@@ -244,7 +247,7 @@ public class GemmValueOperationsTest {
         }
         Thread.sleep(2000);
         int a = getInt(8), b = getInt(12), c = getInt(16);
-        operator.unlockRead(s, 0);
+        operator.unlockRead(s, 1);
         putter.join();
         assertNotEquals(randomValues[0], a);
         assertNotEquals(randomValues[1], b);
@@ -253,7 +256,7 @@ public class GemmValueOperationsTest {
 
     @Test
     public void cannotPutWriteLockedTest() throws InterruptedException {
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 0);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
         CyclicBarrier barrier = new CyclicBarrier(2);
         Random random = new Random();
         int[] randomValues = new int[3];
@@ -288,7 +291,7 @@ public class GemmValueOperationsTest {
                 }
             }, gemmAllocator);
         });
-        operator.lockWrite(s, 0);
+        operator.lockWrite(s, 1);
         putter.start();
         try {
             barrier.await();
@@ -305,14 +308,14 @@ public class GemmValueOperationsTest {
 
     @Test
     public void cannotPutInDeletedValueTest() {
-        operator.deleteValue(s, 0);
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 0);
+        operator.deleteValue(s, 1);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
         assertEquals(FALSE, operator.put(null, lookUp, null, null, gemmAllocator));
     }
 
     @Test
     public void cannotPutToValueOfDifferentGenerationTest() {
-        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
+        Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 2);
         assertEquals(RETRY, operator.put(null, lookUp, null, null, gemmAllocator));
     }
 
@@ -343,14 +346,14 @@ public class GemmValueOperationsTest {
 
     @Test
     public void cannotComputeDeletedValueTest() {
-        operator.deleteValue(s, 0);
+        operator.deleteValue(s, 1);
         assertEquals(FALSE, operator.compute(s, oakWBuffer -> {
-        }, 0));
+        }, 1));
     }
 
     @Test
     public void cannotComputeValueOfDifferentGenerationTest() {
         assertEquals(RETRY, operator.compute(s, oakWBuffer -> {
-        }, 1));
+        }, 2));
     }
 }
