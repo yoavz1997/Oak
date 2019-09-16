@@ -15,11 +15,10 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
-import static com.oath.oak.GemmValueUtils.Result.RETRY;
-import static com.oath.oak.GemmValueUtils.Result.TRUE;
+import static com.oath.oak.GemmAllocator.NULL_VALUE;
+import static com.oath.oak.GemmValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 
@@ -58,7 +57,6 @@ public class Chunk<K, V> {
     }
 
     static final int NONE = 0;    // constant for "no index", etc. MUST BE 0!
-    static final long DELETED_VALUE = 0;
     // location of the first (head) node - just a next pointer
     private static final int HEAD_NODE = 0;
     // index of first item in array, after head (not necessarily first in list!)
@@ -66,8 +64,8 @@ public class Chunk<K, V> {
 
     private static final int FIELDS = OFFSET.biggestOffset;  // # of fields in each item of key array
     // key block is part of key length integer, thus key length is limited to 65KB
-    public static final int KEY_LENGTH_MASK = 0xffff; // 16 lower bits
-    public static final int KEY_BLOCK_SHIFT = 16;
+    static final int KEY_LENGTH_MASK = 0xffff; // 16 lower bits
+    static final int KEY_BLOCK_SHIFT = 16;
     // Assume the length of a value is up to 8MB because there can be up to 512 blocks
     static final int VALUE_LENGTH_MASK = 0x7fffff;
     static final int VALUE_BLOCK_SHIFT = 23;
@@ -77,10 +75,6 @@ public class Chunk<K, V> {
     private static final double SORTED_REBALANCE_RATIO = 2;
     private static final double MAX_ENTRIES_FACTOR = 2;
     private static final double MAX_IDLE_ENTRIES_FACTOR = 5;
-
-    // when chunk is frozen, all of the elements in pending puts array will be this OpData
-    private static final OpData FROZEN_OP_DATA =
-            new OpData(Operation.NO_OP, 0, 0, 0, null, -1);
 
     // defaults
     public static final int MAX_ITEMS_DEFAULT = 4096;
@@ -126,13 +120,12 @@ public class Chunk<K, V> {
     /**
      * Create a new chunk
      *
-     * @param minKey                minimal key to be placed in chunk
-     * @param creator               the chunk that is responsible for this chunk creation
-     * @param threadIndexCalculator
+     * @param minKey  minimal key to be placed in chunk
+     * @param creator the chunk that is responsible for this chunk creation
      */
     Chunk(ByteBuffer minKey, Chunk<K, V> creator, Comparator<Object> comparator, GemmAllocator memoryManager,
           int maxItems, AtomicInteger externalSize, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
-          ThreadIndexCalculator threadIndexCalculator, GemmValueOperations operator) {
+          GemmValueOperations operator) {
         this.memoryManager = memoryManager;
         this.maxItems = maxItems;
         this.entries = new int[maxItems * FIELDS + FIRST_ITEM];
@@ -159,21 +152,19 @@ public class Chunk<K, V> {
     }
 
     static class OpData {
-        final Operation op;
         final int entryIndex;
         final long newValueStats;
         long oldValueStats;
-        final Consumer<OakWBuffer> computer;
-        final int generation;
+        final int oldGeneration;
+        final int newGeneration;
 
-        OpData(Operation op, int entryIndex, long newValueStats, long oldValueStats, Consumer<OakWBuffer> computer,
-               int generation) {
-            this.op = op;
+        OpData(int entryIndex, long oldValueStats, long newValueStats,
+               int oldGeneration, int newGeneration) {
             this.entryIndex = entryIndex;
             this.newValueStats = newValueStats;
             this.oldValueStats = oldValueStats;
-            this.computer = computer;
-            this.generation = generation;
+            this.oldGeneration = oldGeneration;
+            this.newGeneration = newGeneration;
         }
     }
 
@@ -368,65 +359,52 @@ public class Chunk<K, V> {
         return intsToLong(valueBlockAndLength, valuePosition);
     }
 
-    int waitForGenToBeInvalid(int entryIndex) {
-        return waitForGenToBe(entryIndex, false);
-    }
-
-    int waitForGenToBeValid(int entryIndex) {
-        return waitForGenToBe(entryIndex, true);
-    }
-
-    private void readGenAndValue(int entryIndex, int[] results) {
-        do {
-            results[0] = getEntryField(entryIndex, OFFSET.VALUE_GENERATION);
-            results[1] = getEntryField(entryIndex, OFFSET.VALUE_BLOCK);
-        } while (results[0] != getEntryField(entryIndex, OFFSET.VALUE_GENERATION));
-    }
-
-    private int waitForGenToBe(int entryIndex, boolean valid) {
-        int[] results = new int[2];
-        readGenAndValue(entryIndex, results);
-        if (valid) {
-            while (results[0] == INVALID_GENERATION && results[1] != INVALID_BLOCK_ID) {
-                readGenAndValue(entryIndex, results);
-            }
-        } else {
-            while (results[0] != INVALID_GENERATION && results[1] == INVALID_BLOCK_ID) {
-                readGenAndValue(entryIndex, results);
-            }
+    int completeLinking(LookUp lookUp) {
+        int entryGeneration = lookUp.generation;
+        // no need to complete a thing
+        if (entryGeneration > INVALID_GENERATION) {
+            return entryGeneration;
         }
-        return results[0];
-    }
-
-    Map.Entry<Integer, Long> getConsistentValueStatsFromEntry(int entryIndex) {
-        while (true) {
-            long valueStats = getValueStats(entryIndex);
-            Slice value = buildValueSlice(valueStats);
-            Integer result = checkValueConsistency(entryIndex, value);
-            if (result != null) {
-                return new AbstractMap.SimpleEntry<>(result, valueStats);
-            }
-        }
-    }
-
-    private Integer checkValueConsistency(int entryIndex, Slice value) {
-        int entryGen;
-        if (value == null) {
-            waitForGenToBeInvalid(entryIndex);
+        if (!publish()) {
             return INVALID_GENERATION;
-        } else {
-            entryGen = waitForGenToBeValid(entryIndex);
-            if (memoryManager.verifyGeneration(value, entryGen)) {
-                return entryGen;
-            }
         }
-        return null;
+        try {
+            Slice valueSlice = buildValueSlice(lookUp.valueStats);
+            int offHeapGeneration = operator.getOffHeapGeneration(valueSlice);
+            intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_GENERATION, entryGeneration, offHeapGeneration);
+            return offHeapGeneration;
+        } finally {
+            unpublish();
+        }
+    }
+
+    GemmValueUtils.Result finalizeDeletion(LookUp lookUp) {
+        int generation = lookUp.generation;
+        if (generation <= INVALID_GENERATION) {
+            return FALSE;
+        }
+        if (!publish()) {
+            return RETRY;
+        }
+        try {
+            if (!longCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_STATS, lookUp.valueStats, NULL_VALUE)) {
+                return FALSE;
+            }
+            if (!intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_GENERATION, generation, -generation)) {
+                return FALSE;
+            }
+            externalSize.decrementAndGet();
+            statistics.decrementAddedCount();
+            return TRUE;
+        } finally {
+            unpublish();
+        }
     }
 
     /**
      * look up key
      */
-    Map.Entry<GemmValueUtils.Result, LookUp> lookUp(K key) {
+    LookUp lookUp(K key) {
         // binary search sorted part of key array to quickly find node to start search at
         // it finds previous-to-key so start with its next
         int curr = getEntryField(binaryFind(key), OFFSET.NEXT);
@@ -438,37 +416,35 @@ public class Chunk<K, V> {
             // if item's key is larger - we've exceeded our key
             // it's not in chunk - no need to search further
             if (cmp > 0) {
-                return new AbstractMap.SimpleImmutableEntry<>(TRUE, null);
+                return null;
             }
             // if keys are equal - we've found the item
             else if (cmp == 0) {
-                long valueStats = getValueStats(curr);
+                long valueStats;
+                int generation;
+                // Atomic snapshot of generation and value stats
+                do {
+                    generation = getGeneration(curr);
+                    valueStats = getValueStats(curr);
+                } while (generation != getGeneration(curr));
                 Slice valueSlice = buildValueSlice(valueStats);
-                Integer checkResult = checkValueConsistency(curr, valueSlice);
-                if (checkResult == null) {
-                    return new AbstractMap.SimpleImmutableEntry<>(RETRY, null);
-                }
                 if (valueSlice == null) {
                     assert valueStats == 0;
-                    return new AbstractMap.SimpleImmutableEntry<>(TRUE, new LookUp(null, valueStats, curr,
-                            INVALID_GENERATION));
+                    return new LookUp(null, valueStats, curr, generation);
                 }
-                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, checkResult);
+                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, generation);
                 if (result == TRUE) {
-                    return new AbstractMap.SimpleImmutableEntry<>(TRUE, new LookUp(null, valueStats, curr,
-                            checkResult));
-                } else if (result == RETRY) {
-                    return new AbstractMap.SimpleImmutableEntry<>(RETRY, null);
+                    return new LookUp(null, valueStats, curr, generation);
                 }
-                return new AbstractMap.SimpleImmutableEntry<>(TRUE, new LookUp(valueSlice, valueStats, curr,
-                        checkResult));
+                // TODO: if result == RETRY, I ignore it, since it will be discovered later down the line as well
+                return new LookUp(valueSlice, valueStats, curr, generation);
             }
             // otherwise- proceed to next item
             else {
                 curr = getEntryField(curr, OFFSET.NEXT);
             }
         }
-        return new AbstractMap.SimpleImmutableEntry<>(TRUE, null);
+        return null;
     }
 
     static class LookUp {
@@ -476,7 +452,7 @@ public class Chunk<K, V> {
         final Slice valueSlice;
         final long valueStats;
         final int entryIndex;
-        final int generation;
+        int generation;
 
         LookUp(Slice valueSlice, long valueStats, int entryIndex, int generation) {
             this.valueSlice = valueSlice;
@@ -575,7 +551,7 @@ public class Chunk<K, V> {
         return ei;
     }
 
-    int linkEntry(int ei, boolean cas, K key) {
+    int linkEntry(int ei, K key) {
         int prev, curr, cmp;
         int anchor = -1;
 
@@ -612,33 +588,28 @@ public class Chunk<K, V> {
             // link to list between next and previous
             // first change this key's next to point to curr
             setEntryField(ei, OFFSET.NEXT, curr); // no need for CAS since put is not even published yet
-            if (cas) {
-                if (intCasEntriesArray(prev, OFFSET.NEXT, curr, ei)) {
-                    // Here is the single place where we do enter a new entry to the chunk, meaning
-                    // there is none else simultaneously inserting the same key
-                    // (we were the first to insert this key).
-                    // If the new entry's index is exactly after the sorted count and
-                    // the entry's key is greater or equal then to the previous (sorted count)
-                    // index key. Then increase the sorted count.
-                    int sortedCount = this.sortedCount.get();
-                    if (sortedCount > 0) {
-                        if (ei == (sortedCount * FIELDS + 1)) {
-                            // the new entry's index is exactly after the sorted count
-                            if (compare(
-                                    readKey((sortedCount - 1) * FIELDS + FIRST_ITEM), key) <= 0) {
-                                // compare with sorted count key, if inserting the "if-statement",
-                                // the sorted count key is less or equal to the key just inserted
-                                this.sortedCount.compareAndSet(sortedCount, (sortedCount + 1));
-                            }
+            if (intCasEntriesArray(prev, OFFSET.NEXT, curr, ei)) {
+                // Here is the single place where we do enter a new entry to the chunk, meaning
+                // there is none else simultaneously inserting the same key
+                // (we were the first to insert this key).
+                // If the new entry's index is exactly after the sorted count and
+                // the entry's key is greater or equal then to the previous (sorted count)
+                // index key. Then increase the sorted count.
+                int sortedCount = this.sortedCount.get();
+                if (sortedCount > 0) {
+                    if (ei == (sortedCount * FIELDS + 1)) {
+                        // the new entry's index is exactly after the sorted count
+                        if (compare(
+                                readKey((sortedCount - 1) * FIELDS + FIRST_ITEM), key) <= 0) {
+                            // compare with sorted count key, if inserting the "if-statement",
+                            // the sorted count key is less or equal to the key just inserted
+                            this.sortedCount.compareAndSet(sortedCount, (sortedCount + 1));
                         }
                     }
-                    return ei;
                 }
-                // CAS didn't succeed, try again
-            } else {
-                // without CAS (used by rebalance)
-                setEntryField(prev, OFFSET.NEXT, ei);
+                return ei;
             }
+            // CAS didn't succeed, try again
         }
     }
 
@@ -670,84 +641,24 @@ public class Chunk<K, V> {
      * <p>
      * if someone else got to it first (helping rebalancer or other operation), returns the old handle
      */
-    long pointToValue(OpData opData) {
 
-        // try to perform the CAS according to operation data (opData)
-        if (pointToValueCAS(opData, true)) {
-            setEntryField(opData.entryIndex, OFFSET.VALUE_GENERATION, opData.generation);
-            return DELETED_VALUE;
+    GemmValueUtils.Result linkValue(OpData opData) {
+        if (!longCasEntriesArray(opData.entryIndex, OFFSET.VALUE_STATS, opData.oldValueStats,
+                opData.newValueStats)) {
+            return FALSE;
         }
-
-        // the straight forward helping didn't work, check why
-        Operation operation = opData.op;
-
-        // the operation is remove, means we tried to change the handle index we knew about to -1
-        // the old handle index is no longer there so we have nothing to do. Note that in case of non-ZC removal the
-        // loop in remove() will lookup the key again so we will still return the previous value
-        if (operation == Operation.REMOVE) {
-            return DELETED_VALUE; // this is a remove, no need to try again and return doesn't matter
-        }
-
-        // the operation is either NO_OP, PUT, PUT_IF_ABSENT, COMPUTE
-        long expectedValueStats = opData.newValueStats;
-        long foundValueStats = getValueStats(opData.entryIndex);
-        int foundValueBlockAndLength = UnsafeUtils.longToInts(foundValueStats)[0];
-
-        if (expectedValueStats == foundValueStats) {
-            return DELETED_VALUE; // someone helped
-        } else if (foundValueBlockAndLength == INVALID_BLOCK_ID) {
-            // the handle was deleted, retry the attach
-            opData.oldValueStats = 0;
-            return pointToValue(opData); // remove completed, try again
-        } else if (operation == Operation.PUT_IF_ABSENT) {
-            return foundValueStats; // too late
-        } else if (operation == Operation.COMPUTE) {
-            Slice valueSlice = buildValueSlice(foundValueStats);
-            Integer checkResult = checkValueConsistency(opData.entryIndex, valueSlice);
-            if (checkResult == null) {
-                opData.oldValueStats = foundValueStats;
-                return pointToValue(opData);
-            }
-            GemmValueUtils.Result succ = operator.compute(valueSlice, opData.computer, checkResult);
-            if (succ != TRUE) {
-                // we tried to perform the compute but the value was deleted/moved,
-                // we can get to pointToValue with Operation.COMPUTE only from PIACIP
-                // retry to make a put and to attach the new handle
-                opData.oldValueStats = foundValueStats;
-                return pointToValue(opData);
-            }
-            return foundValueStats;
-        }
-        // this is a put, try again
-        opData.oldValueStats = foundValueStats;
-        return pointToValue(opData);
-    }
-
-    /**
-     * used by put/putIfAbsent/remove and rebalancer
-     */
-    private boolean pointToValueCAS(OpData opData, boolean cas) {
-        if (cas) {
-            if (longCasEntriesArray(opData.entryIndex, OFFSET.VALUE_STATS, opData.oldValueStats,
-                    opData.newValueStats)) {
-                // update statistics only by thread that CASed
-                int[] olValueArray = UnsafeUtils.longToInts(opData.oldValueStats);
-                int[] valueArray = UnsafeUtils.longToInts(opData.newValueStats);
-                if (olValueArray[0] == INVALID_BLOCK_ID && valueArray[0] > 0) { // previously a remove
-                    statistics.incrementAddedCount();
-                    externalSize.incrementAndGet();
-                } else if (olValueArray[0] > 0 && valueArray[0] == INVALID_BLOCK_ID) { // removing
-                    statistics.decrementAddedCount();
-                    externalSize.decrementAndGet();
-                }
-                return true;
-            }
+        intCasEntriesArray(opData.entryIndex, OFFSET.VALUE_GENERATION, opData.oldGeneration, opData.newGeneration);
+        if (opData.oldValueStats == NULL_VALUE) {
+            assert opData.newValueStats != NULL_VALUE;
+            statistics.incrementAddedCount();
+            externalSize.incrementAndGet();
         } else {
-            int[] valueArray = UnsafeUtils.longToInts(opData.newValueStats);
-            setEntryField(opData.entryIndex, OFFSET.VALUE_POSITION, valueArray[1]);
-            setEntryField(opData.entryIndex, OFFSET.VALUE_BLOCK_AND_LENGTH, valueArray[0]);
+            assert false;
+            assert opData.newValueStats == NULL_VALUE;
+            externalSize.decrementAndGet();
+            statistics.decrementAddedCount();
         }
-        return false;
+        return TRUE;
     }
 
     /**
@@ -755,7 +666,7 @@ public class Chunk<K, V> {
      *
      * @param r -- a rebalancer to engage with
      */
-    void engage(Rebalancer r) {
+    void engage(Rebalancer<K, V> r) {
         rebalancer.compareAndSet(null, r);
     }
 

@@ -17,6 +17,7 @@ import java.util.function.Function;
 
 import static com.oath.oak.Chunk.*;
 import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
+import static com.oath.oak.GemmAllocator.NULL_VALUE;
 import static com.oath.oak.GemmValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.longToInts;
@@ -70,7 +71,7 @@ class InternalOakMap<K, V> {
         this.skiplist = new ConcurrentSkipListMap<>(this.comparator);
 
         Chunk<K, V> head = new Chunk<>(this.minKey, null, this.comparator, memoryManager, chunkMaxItems,
-                this.size, keySerializer, valueSerializer, threadIndexCalculator, operator);
+                this.size, keySerializer, valueSerializer, operator);
         this.skiplist.put(head.minKey, head);    // add first chunk (head) into skiplist
         this.head = new AtomicReference<>(head);
         this.threadIndexCalculator = threadIndexCalculator;
@@ -281,460 +282,609 @@ class InternalOakMap<K, V> {
         }
     }
 
-    private boolean rebalanceRemove(Chunk<K, V> c) {
-        //TODO YONIGO - is it ok?
-        return rebalance(c);
+    private boolean inTheMiddleOfRebalance(Chunk<K, V> c) {
+        State state = c.state();
+        if (state == State.INFANT) {
+            // the infant is already connected so rebalancer won't add this put
+            rebalance(c.creator());
+            return true;
+        }
+        if (state == State.FROZEN || state == State.RELEASED) {
+            rebalance(c);
+            return true;
+        }
+        return false;
     }
 
-    // Returns old handle if someone helped before pointToValue happened, or null if
-    private long finishAfterPublishing(Chunk.OpData opData, Chunk<K, V> c) {
-        // set pointer to value
-        long result = c.pointToValue(opData);
-        c.unpublish();
-        checkRebalance(c);
-        return result;
+    private boolean finalizeDeletion(Chunk<K, V> c, LookUp lookUp) {
+        if (lookUp != null) {
+            if (c.finalizeDeletion(lookUp) == RETRY) {
+                rebalance(c);
+                return true;
+            }
+        }
+        return false;
     }
 
     /*-------------- OakMap Methods --------------*/
 
-    V put(K key, V value, Function<ByteBuffer, V> transformer) {
+    void zcPut(K key, V value) {
         if (key == null || value == null) {
             throw new NullPointerException();
         }
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
 
-        Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return put(key, value, transformer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp != null && lookUp.valueSlice != null) {
-            V v = null;
-            if (transformer != null) {
-                AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
-                        transformer, lookUp.generation);
-                if (res.getKey() == RETRY) {
-                    return put(key, value, transformer);
+            if (lookUp != null && lookUp.valueSlice != null) {
+                if (updateGenerationAfterLinking(c, lookUp)) {
+                    continue;
                 }
-                v = res.getValue();
+                if (operator.put(c, lookUp, value, valueSerializer, memoryManager) == TRUE) {
+                    return;
+                }
+                continue;
             }
-            if (operator.put(c, lookUp, value, valueSerializer, memoryManager) != TRUE) {
-                return put(key, value, transformer);
+
+            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
+                continue;
             }
-            return v;
-        }
+            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
 
-        // if chunk is frozen or infant, we can't add to it
-        // we need to help rebalancer first, then proceed
-        Chunk.State state = c.state();
-        if (state == Chunk.State.INFANT) {
-            // the infant is already connected so rebalancer won't add this put
-            rebalance(c.creator());
-            put(key, value, transformer);
-            return null;
-        }
-        if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
-            rebalance(c);
-            put(key, value, transformer);
-            return null;
-        }
+            // Now the entry's version is invalid
 
-        int ei = -1;
-        long oldStats = 0;
-        if (lookUp != null) {
-            ei = lookUp.entryIndex;
-            assert ei > 0;
-            oldStats = lookUp.valueStats;
-        }
+            int ei = -1;
+            if (lookUp != null) {
+                ei = lookUp.entryIndex;
+                assert ei > 0;
+            }
 
-        if (ei == -1) {
-            ei = c.allocateEntryAndKey(key);
+            // Lookup is not valid anymore, only its entry index
+
             if (ei == -1) {
-                rebalance(c);
-                return put(key, value, transformer);
-                // TODO: seems wrong
-//                put(key, value, transformer);
-//                return null;
-            }
-            int prevEi = c.linkEntry(ei, true, key);
-            if (prevEi != ei) {
-                ei = prevEi;
-                oldStats = c.getValueStats(prevEi);
-            }
-        }
-
-        int[] generation = new int[1];
-        long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
-
-        c.waitForGenToBeInvalid(ei);
-        Chunk.OpData opData = new Chunk.OpData(Operation.PUT, ei, newValueStats, oldStats, null, generation[0]);
-
-        // publish put
-        if (!c.publish()) {
-            memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-            rebalance(c);
-            put(key, value, transformer);
-            return null;
-        }
-
-        finishAfterPublishing(opData, c);
-
-        return null;
-    }
-
-    Result<V> putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
-        if (key == null || value == null) {
-            throw new NullPointerException();
-        }
-
-        Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return putIfAbsent(key, value, transformer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp != null && lookUp.valueSlice != null) {
-            if (transformer == null) {
-                return Result.withFlag(false);
-            }
-            AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice, transformer
-                    , lookUp.generation);
-            if (res.getKey() == TRUE) {
-                return Result.withValue(res.getValue());
-            }
-            return putIfAbsent(key, value, transformer);
-        }
-
-        // if chunk is frozen or infant, we can't add to it
-        // we need to help rebalancer first, then proceed
-        Chunk.State state = c.state();
-        if (state == Chunk.State.INFANT) {
-            // the infant is already connected so rebalancer won't add this put
-            rebalance(c.creator());
-            return putIfAbsent(key, value, transformer);
-        }
-        if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
-            rebalance(c);
-            return putIfAbsent(key, value, transformer);
-        }
-
-
-        int ei = -1;
-        long oldStats = 0;
-        if (lookUp != null) {
-            ei = lookUp.entryIndex;
-            assert ei > 0;
-            oldStats = lookUp.valueStats;
-        }
-
-        // TODO - this can be the else clause of the previous if
-        if (ei == -1) {
-            ei = c.allocateEntryAndKey(key);
-            if (ei == -1) {
-                rebalance(c);
-                return putIfAbsent(key, value, transformer);
-            }
-            int prevEi = c.linkEntry(ei, true, key);
-            if (prevEi != ei) {
-                oldStats = c.getValueStats(prevEi);
-                if (oldStats != 0) {
-                    if (transformer == null) {
-                        return Result.withFlag(false);
-                    }
-                    int currGen = c.waitForGenToBeValid(ei);
-                    AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res =
-                            operator.transform(c.buildValueSlice(oldStats), transformer, currGen);
-                    if (res.getKey() == TRUE) {
-                        return Result.withValue(res.getValue());
-                    }
-                    // TODO: Should I restart? In the ZC case, the operation already linearized and returned
-                    return putIfAbsent(key, value, transformer);
-                } else {
+                ei = c.allocateEntryAndKey(key);
+                if (ei == -1) {
+                    rebalance(c);
+                    continue;
+                }
+                int prevEi = c.linkEntry(ei, key);
+                if (prevEi != ei) {
                     ei = prevEi;
                 }
             }
+
+            int[] generation = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+
+            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
+                    oldGeneration, generation[0]);
+
+            if (!c.publish()) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                rebalance(c);
+                continue;
+            }
+
+            if (c.linkValue(opData) != TRUE) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.unpublish();
+            } else {
+                c.unpublish();
+                checkRebalance(c);
+                return;
+            }
+        }
+    }
+
+    V nonZcPut(K key, V value, Function<ByteBuffer, V> transformer) {
+        if (key == null || value == null) {
+            throw new NullPointerException();
         }
 
-        int[] generation = new int[1];
-        long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
-        c.waitForGenToBeInvalid(ei);
-        Chunk.OpData opData = new Chunk.OpData(Operation.PUT_IF_ABSENT, ei, newValueStats, oldStats, null,
-                generation[0]);
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
+            if (lookUp != null && lookUp.valueSlice != null) {
+                if (updateGenerationAfterLinking(c, lookUp)) {
+                    continue;
+                }
+                V v = null;
+                if (transformer != null) {
+                    // Todo: Not atomic!
+                    AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                            transformer, lookUp.generation);
+                    if (res.getKey() == RETRY) {
+                        continue;
+                    }
+                    v = res.getValue();
+                }
+                if (operator.put(c, lookUp, value, valueSerializer, memoryManager) != TRUE) {
+                    continue;
+                }
+                return v;
+            }
 
-        // publish put
-        if (!c.publish()) {
-            memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-            rebalance(c);
-            return putIfAbsent(key, value, transformer);
+            // if chunk is frozen or infant, we can't add to it
+            // we need to help rebalancer first, then proceed
+            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
+                continue;
+            }
+            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+
+            int ei = -1;
+            if (lookUp != null) {
+                ei = lookUp.entryIndex;
+                assert ei > 0;
+            }
+
+            if (ei == -1) {
+                ei = c.allocateEntryAndKey(key);
+                if (ei == -1) {
+                    rebalance(c);
+                    continue;
+                }
+                int prevEi = c.linkEntry(ei, key);
+                if (prevEi != ei) {
+                    ei = prevEi;
+                }
+            }
+
+            int[] generation = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+
+            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats, oldGeneration,
+                    generation[0]);
+
+            // publish put
+            if (!c.publish()) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                rebalance(c);
+                continue;
+            }
+
+            if (c.linkValue(opData) != TRUE) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.unpublish();
+            } else {
+                c.unpublish();
+                checkRebalance(c);
+                return null;
+            }
+        }
+    }
+
+    boolean zcPutIfAbsent(K key, V value) {
+        if (key == null || value == null) {
+            throw new NullPointerException();
         }
 
-        long result = finishAfterPublishing(opData, c);
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
 
-        if (result != DELETED_VALUE) {
-            memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+            if (lookUp != null && lookUp.valueSlice != null) {
+                if (c.completeLinking(lookUp) == INVALID_GENERATION) {
+                    rebalance(c);
+                    continue;
+                }
+                return false;
+            }
+
+            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
+                continue;
+            }
+            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+
+            // Now the entry's version is invalid
+
+            int myEntryIndex = -1;
+            if (lookUp != null) {
+                myEntryIndex = lookUp.entryIndex;
+                assert myEntryIndex > 0;
+            }
+
+            if (myEntryIndex == -1) {
+                myEntryIndex = c.allocateEntryAndKey(key);
+                if (myEntryIndex == -1) {
+                    rebalance(c);
+                    continue;
+                }
+                int prevEi = c.linkEntry(myEntryIndex, key);
+                if (prevEi != myEntryIndex) {
+                    if (c.getValueStats(prevEi) != NULL_VALUE) {
+                        // Todo: maybe return false?
+                        continue;
+                    } else {
+                        myEntryIndex = prevEi;
+                    }
+                }
+            }
+
+            int[] generation = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+
+            Chunk.OpData opData = new Chunk.OpData(myEntryIndex, NULL_VALUE, newValueStats,
+                    oldGeneration, generation[0]);
+
+            if (!c.publish()) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                rebalance(c);
+                continue;
+            }
+
+            if (c.linkValue(opData) != TRUE) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.unpublish();
+            } else {
+                c.unpublish();
+                checkRebalance(c);
+                return true;
+            }
         }
-        if (transformer == null) {
-            return Result.withFlag(result == DELETED_VALUE);
+    }
+
+    V putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
+        if (key == null || value == null) {
+            throw new NullPointerException();
         }
-        // TODO: Should I restart? In the ZC case, the operation already linearized and returned
-        if (result == DELETED_VALUE) {
-            return Result.withValue(null);
+
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
+
+            if (lookUp != null && lookUp.valueSlice != null) {
+                if (updateGenerationAfterLinking(c, lookUp)) {
+                    continue;
+                }
+                AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                        transformer, lookUp.generation);
+                if (res.getKey() == TRUE) {
+                    return res.getValue();
+                }
+                continue;
+            }
+
+            // if chunk is frozen or infant, we can't add to it
+            // we need to help rebalancer first, then proceed
+            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
+                continue;
+            }
+            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+
+
+            int ei = -1;
+            if (lookUp != null) {
+                ei = lookUp.entryIndex;
+                assert ei > 0;
+            }
+
+            // TODO - this can be the else clause of the previous if
+            if (ei == -1) {
+                ei = c.allocateEntryAndKey(key);
+                if (ei == -1) {
+                    rebalance(c);
+                    return putIfAbsent(key, value, transformer);
+                }
+                int prevEi = c.linkEntry(ei, key);
+                if (prevEi != ei) {
+                    if (c.getValueStats(prevEi) != 0) {
+                        continue;
+                    } else {
+                        ei = prevEi;
+                    }
+                }
+            }
+
+            int[] generation = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
+                    oldGeneration, generation[0]);
+
+            // publish put
+            if (!c.publish()) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                rebalance(c);
+                return putIfAbsent(key, value, transformer);
+            }
+
+            if (c.linkValue(opData) != TRUE) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.unpublish();
+            } else {
+                c.unpublish();
+                checkRebalance(c);
+                return null;
+            }
         }
-        // busy-wait until the generation is set
-        int currGen = c.waitForGenToBeValid(ei);
-        AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(c.buildValueSlice(result),
-                transformer, currGen);
-        // TODO: What should be done if the value was already deleted?
-        if (res.getKey() != RETRY) {
-            return Result.withValue(res.getValue());
-        }
-        //TODO: Value causing the failure moved... what to do?
-        throw new UnsupportedOperationException();
     }
 
     boolean putIfAbsentComputeIfPresent(K key, V value, Consumer<OakWBuffer> computer) {
-
         if (key == null || value == null || computer == null) {
             throw new NullPointerException();
         }
 
-        Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return putIfAbsentComputeIfPresent(key, value, computer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp != null && lookUp.valueSlice != null) {
-            GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
-            if (res == TRUE) {
-                // compute was successful and handle wasn't found deleted; in case
-                // this handle was already found as deleted, continue to construct another handle
-                return false;
-            } else if (res == RETRY) {
-                return putIfAbsentComputeIfPresent(key, value, computer);
-            }
-        }
-
-        // if chunk is frozen or infant, we can't add to it
-        // we need to help rebalancer first, then proceed
-        Chunk.State state = c.state();
-        if (state == Chunk.State.INFANT) {
-            // the infant is already connected so rebalancer won't add this put
-            rebalance(c.creator());
-            return putIfAbsentComputeIfPresent(key, value, computer);
-        }
-        if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
-            rebalance(c);
-            return putIfAbsentComputeIfPresent(key, value, computer);
-        }
-
-        // we come here when no key was found, which can be in 3 cases:
-        // 1. no entry in the linked list at all
-        // 2. entry in the linked list, but handle is not attached
-        // 3. entry in the linked list, handle attached, but handle is marked deleted
-        int ei = -1;
-        long oldStats = 0;
-        if (lookUp != null) {
-            ei = lookUp.entryIndex;
-            assert ei > 0;
-            oldStats = lookUp.valueStats;
-        }
-
-        if (ei == -1) {
-            ei = c.allocateEntryAndKey(key);
-            if (ei == -1) {
-                rebalance(c);
-                return putIfAbsentComputeIfPresent(key, value, computer);
-            }
-            int prevEi = c.linkEntry(ei, true, key);
-            if (prevEi != ei) {
-                oldStats = c.getValueStats(prevEi);
-                if (oldStats != 0) {
-                    int currGen = c.waitForGenToBeValid(prevEi);
-                    GemmValueUtils.Result res = operator.compute(c.buildValueSlice(oldStats), computer, currGen);
-                    if (res == TRUE) {
-                        // compute was successful and handle wasn't found deleted; in case
-                        // this handle was already found as deleted, continue to construct another handle
-                        return false;
-                    } else if (res == RETRY) {
-                        return putIfAbsentComputeIfPresent(key, value, computer);
-                    }
-                } else {
-                    ei = prevEi;
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
+            if (lookUp != null && lookUp.valueSlice != null) {
+                if (updateGenerationAfterLinking((Chunk<K, V>) c, lookUp)) {
+                    continue;
+                }
+                GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
+                if (res == TRUE) {
+                    // compute was successful and handle wasn't found deleted; in case
+                    // this handle was already found as deleted, continue to construct another handle
+                    return false;
+                } else if (res == RETRY) {
+                    continue;
                 }
             }
+
+            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
+                continue;
+            }
+            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+
+            int ei = -1;
+            if (lookUp != null) {
+                ei = lookUp.entryIndex;
+                assert ei > 0;
+            }
+
+            if (ei == -1) {
+                ei = c.allocateEntryAndKey(key);
+                if (ei == -1) {
+                    rebalance(c);
+                    continue;
+                }
+                int prevEi = c.linkEntry(ei, key);
+                if (prevEi != ei) {
+                    if (c.getValueStats(prevEi) != NULL_VALUE) {
+                        continue;
+                    } else {
+                        ei = prevEi;
+                    }
+                }
+            }
+
+            int[] generation = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+
+            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
+                    oldGeneration, generation[0]);
+
+            if (!c.publish()) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                rebalance(c);
+                continue;
+            }
+
+            if (c.linkValue(opData) != TRUE) {
+                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.unpublish();
+            } else {
+                c.unpublish();
+                checkRebalance(c);
+                return true;
+            }
         }
-
-        int[] generation = new int[1];
-        long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
-
-        c.waitForGenToBeInvalid(ei);
-        Chunk.OpData opData = new Chunk.OpData(Operation.COMPUTE, ei, newValueStats, oldStats, computer, generation[0]);
-
-        // publish put
-        if (!c.publish()) {
-            memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-            rebalance(c);
-            return putIfAbsentComputeIfPresent(key, value, computer);
-        }
-
-        long res = finishAfterPublishing(opData, c);
-        if (res != DELETED_VALUE) {
-            memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-        }
-        return res == DELETED_VALUE;
     }
 
-    private void finalizeRemove(K key, Chunk<K, V> c, Chunk.LookUp lookUp, int oldGeneration) {
-        do {
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null,
-                    INVALID_GENERATION);
-            // publish
-            if (!c.publish()) {
-                rebalance(c);
-                c = findChunk(key); // find chunk matching key
-                Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-                if (resultLookUpEntry.getKey() == RETRY) {
-                    return;
-                }
-                lookUp = resultLookUpEntry.getValue();
-                if (lookUp == null) {
-                    return;
-                }
-                if (lookUp.generation == oldGeneration) {
-                    continue;
-                } else {
-                    return;
-                }
-            }
-            finishAfterPublishing(opData, c);
-            return;
-        } while (true);
+    private boolean updateGenerationAfterLinking(Chunk<K, V> c, LookUp lookUp) {
+        int valueGeneration = c.completeLinking(lookUp);
+        if (valueGeneration == INVALID_GENERATION) {
+            rebalance(c);
+            return true;
+        }
+        lookUp.generation = valueGeneration;
+        return false;
     }
 
     boolean zcRemove(K key) {
-        Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return zcRemove(key);
+        if (key == null) {
+            throw new NullPointerException();
         }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-
-        if (lookUp == null || lookUp.valueSlice == null) {
-            // There is no such key. If we did logical deletion and someone else did the physical deletion,
-            // then the old value is saved in v. Otherwise v is (correctly) null
-            return false;
-        }
-
-        GemmValueUtils.Result res = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
-        if (res == FALSE) {
-            // we didn't succeed to remove the handle was marked as deleted already
-            return false;
-        } else if (res == RETRY) {
-            return zcRemove(key);
-        }
-        Chunk.State state = c.state();
-        if (state == Chunk.State.INFANT) {
-            // the infant is already connected so rebalancer won't add this put
-            rebalance(c.creator());
-        }
-        if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
-            rebalance(c);
-        }
-        finalizeRemove(key, c, lookUp, lookUp.generation);
-        return true;
-    }
-
-    V remove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
-        // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may
-        // still be linked!
-        boolean logicallyDeleted = false;
-        V v = null;
 
         while (true) {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
-            Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-            if (resultLookUpEntry.getKey() == RETRY) {
-                return remove(key, oldValue, transformer);
-            }
-            Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+            Chunk.LookUp lookUp = c.lookUp(key);
 
-            if (lookUp == null || lookUp.valueSlice == null) {
-                // There is no such key. If we did logical deletion and someone else did the physical deletion,
-                // then the old value is saved in v. Otherwise v is (correctly) null
-                return v;
-            }
-
-            if (logicallyDeleted) {
-                // This is the case where we logically deleted this entry (marked the handle as deleted), but someone
-                // reused
-                // the entry before we unlinked it. We have the previous value saved in v.
-                return v;
-            } else {
-                V vv = (transformer != null) ?
-                        operator.transform(lookUp.valueSlice, transformer, lookUp.generation).getValue() : null;
-
-                if (oldValue != null && !oldValue.equals(vv)) {
-                    // this is not the droid you're looking for
-                    return null;
+            if (lookUp == null) {
+                return false;
+            } else if (lookUp.valueSlice == null) {
+                if (c.finalizeDeletion(lookUp) != RETRY) {
+                    return false;
                 }
-
-                GemmValueUtils.Result res = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
-                if (res == FALSE) {
-                    // we didn't succeed to remove the handle was marked as deleted already
-                    return null;
-                } else if (res == RETRY) {
-                    return remove(key, oldValue, transformer);
-                }
-                // we have marked this handle as deleted (successful remove)
-                logicallyDeleted = true;
-                v = vv;
-            }
-
-            // if chunk is frozen or infant, we can't update it (remove deleted key, set handle index to -1)
-            // we need to help rebalancer first, then proceed
-            Chunk.State state = c.state();
-            if (state == Chunk.State.INFANT) {
-                // the infant is already connected so rebalancer won't add this put
-                rebalance(c.creator());
                 continue;
             }
-            if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
-                if (!rebalanceRemove(c)) {
-                    continue;
-                }
-                return v;
+
+            if (inTheMiddleOfRebalance(c)) {
+                continue;
             }
 
-
-            assert lookUp.entryIndex > 0;
-            assert lookUp.valueStats > 0;
-            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null,
-                    INVALID_GENERATION);
-
-            // publish
-            if (!c.publish()) {
-                if (!rebalanceRemove(c)) {
-                    continue;
-                }
-                return v;
+            if (updateGenerationAfterLinking(c, lookUp)) {
+                continue;
             }
 
-            finishAfterPublishing(opData, c);
+            GemmValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+            if (result == RETRY) {
+                continue;
+            }
+            if (c.finalizeDeletion(lookUp) == RETRY) {
+                zcRemove(key);
+            }
+            return result == TRUE;
         }
     }
 
-    OakRBuffer get(K key) {
+    V nonZcRemove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
+        if (key == null) {
+            throw new NullPointerException();
+        }
+
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
+
+            if (lookUp == null) {
+                return null;
+            } else if (lookUp.valueSlice == null) {
+                if (c.finalizeDeletion(lookUp) != RETRY) {
+                    return null;
+                }
+                continue;
+            }
+
+            if (inTheMiddleOfRebalance(c)) {
+                continue;
+            }
+
+            if (updateGenerationAfterLinking(c, lookUp)) {
+                continue;
+            }
+
+            // Todo: Not Atomic!
+            AbstractMap.SimpleEntry<GemmValueUtils.Result, V> resultVSimpleEntry =
+                    operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
+            if (resultVSimpleEntry.getKey() == RETRY) {
+                continue;
+            }
+            V previousValue = resultVSimpleEntry.getValue();
+            if (oldValue != null && !oldValue.equals(previousValue)) {
+                return null;
+            }
+
+            GemmValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+            if (result == RETRY) {
+                continue;
+            }
+            if (c.finalizeDeletion(lookUp) == RETRY) {
+                rebalance(c);
+                nonZcRemove(key, oldValue, transformer);
+            }
+            return result == TRUE ? previousValue : null;
+        }
+    }
+
+//    boolean zcRemove(K key) {
+//        Chunk<K, V> c = findChunk(key); // find chunk matching key
+//        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+//        if (resultLookUpEntry.getKey() == RETRY) {
+//            return zcRemove(key);
+//        }
+//        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+//
+//        if (lookUp == null || lookUp.valueSlice == null) {
+//            // There is no such key. If we did logical deletion and someone else did the physical deletion,
+//            // then the old value is saved in v. Otherwise v is (correctly) null
+//            return false;
+//        }
+//
+//        GemmValueUtils.Result res = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+//        if (res == FALSE) {
+//            // we didn't succeed to remove the handle was marked as deleted already
+//            return false;
+//        } else if (res == RETRY) {
+//            return zcRemove(key);
+//        }
+//        Chunk.State state = c.state();
+//        if (state == Chunk.State.INFANT) {
+//            // the infant is already connected so rebalancer won't add this put
+//            rebalance(c.creator());
+//        }
+//        if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
+//            rebalance(c);
+//        }
+//        finalizeRemove(key, c, lookUp, lookUp.generation);
+//        return true;
+//    }
+
+//    V remove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
+//        // when logicallyDeleted is true, it means we have marked the handle as deleted. Note that the entry may
+//        // still be linked!
+//        boolean logicallyDeleted = false;
+//        V v = null;
+//
+//        while (true) {
+//            Chunk<K, V> c = findChunk(key); // find chunk matching key
+//            Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
+//            if (resultLookUpEntry.getKey() == RETRY) {
+//                return remove(key, oldValue, transformer);
+//            }
+//            Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+//
+//            if (lookUp == null || lookUp.valueSlice == null) {
+//                // There is no such key. If we did logical deletion and someone else did the physical deletion,
+//                // then the old value is saved in v. Otherwise v is (correctly) null
+//                return v;
+//            }
+//
+//            if (logicallyDeleted) {
+//                // This is the case where we logically deleted this entry (marked the handle as deleted), but someone
+//                // reused
+//                // the entry before we unlinked it. We have the previous value saved in v.
+//                return v;
+//            } else {
+//                V vv = (transformer != null) ?
+//                        operator.transform(lookUp.valueSlice, transformer, lookUp.generation).getValue() : null;
+//
+//                if (oldValue != null && !oldValue.equals(vv)) {
+//                    // this is not the droid you're looking for
+//                    return null;
+//                }
+//
+//                GemmValueUtils.Result res = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+//                if (res == FALSE) {
+//                    // we didn't succeed to remove the handle was marked as deleted already
+//                    return null;
+//                } else if (res == RETRY) {
+//                    return remove(key, oldValue, transformer);
+//                }
+//                // we have marked this handle as deleted (successful remove)
+//                logicallyDeleted = true;
+//                v = vv;
+//            }
+//
+//            // if chunk is frozen or infant, we can't update it (remove deleted key, set handle index to -1)
+//            // we need to help rebalancer first, then proceed
+//            Chunk.State state = c.state();
+//            if (state == Chunk.State.INFANT) {
+//                // the infant is already connected so rebalancer won't add this put
+//                rebalance(c.creator());
+//                continue;
+//            }
+//            if (state == Chunk.State.FROZEN || state == Chunk.State.RELEASED) {
+//                if (!rebalance(c)) {
+//                    continue;
+//                }
+//                return v;
+//            }
+//
+//
+//            assert lookUp.entryIndex > 0;
+//            assert lookUp.valueStats > 0;
+//            Chunk.OpData opData = new Chunk.OpData(Operation.REMOVE, lookUp.entryIndex, 0, lookUp.valueStats, null,
+//                    INVALID_GENERATION);
+//
+//            // publish
+//            if (!c.publish()) {
+//                if (!rebalance(c)) {
+//                    continue;
+//                }
+//                return v;
+//            }
+//
+//            finishAfterPublishing(opData, c);
+//        }
+//    }
+
+    OakRBuffer zcGet(K key) {
         if (key == null) {
             throw new NullPointerException();
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return get(key);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+        Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
@@ -742,27 +892,51 @@ class InternalOakMap<K, V> {
         return new OakRValueBufferImpl(lookUp.valueStats, lookUp.generation, keyStats, operator, memoryManager);
     }
 
+    boolean computeIfPresent(K key, Consumer<OakWBuffer> computer) {
+        if (key == null || computer == null) {
+            throw new NullPointerException();
+        }
+
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
+
+            if (lookUp != null && lookUp.valueSlice != null) {
+                GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
+                if (res == TRUE) {
+                    // compute was successful and handle wasn't found deleted; in case
+                    // this handle was already found as deleted, continue to construct another handle
+                    return true;
+                } else if (res == RETRY) {
+                    continue;
+                }
+            }
+            return false;
+        }
+    }
+
     <T> T getValueTransformation(K key, Function<ByteBuffer, T> transformer) {
         if (key == null || transformer == null) {
             throw new NullPointerException();
         }
 
-        Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return getValueTransformation(key, transformer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp == null || lookUp.valueSlice == null) {
-            return null;
-        }
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(key);
+            if (lookUp == null || lookUp.valueSlice == null) {
+                return null;
+            }
 
-        AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer,
-                lookUp.generation);
-        if (res.getKey() == RETRY) {
-            return getValueTransformation(key, transformer);
+            if (updateGenerationAfterLinking(c, lookUp)) {
+                continue;
+            }
+            AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer,
+                    lookUp.generation);
+            if (res.getKey() == RETRY) {
+                continue;
+            }
+            return res.getValue();
         }
-        return res.getValue();
     }
 
     private <T> T getValueTransformation(ByteBuffer key, Function<ByteBuffer, T> transformer) {
@@ -776,11 +950,7 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return getKeyTransformation(key, transformer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+        Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
         }
@@ -794,11 +964,7 @@ class InternalOakMap<K, V> {
         }
 
         Chunk<K, V> c = findChunk(key);
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return getKey(key);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+        Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp == null || lookUp.valueSlice == null || lookUp.entryIndex == -1) {
             return null;
         }
@@ -852,28 +1018,6 @@ class InternalOakMap<K, V> {
         return (serializedMaxKey != null) ? transformer.apply(serializedMaxKey) : null;
     }
 
-    boolean computeIfPresent(K key, Consumer<OakWBuffer> computer) {
-        if (key == null || computer == null) {
-            throw new NullPointerException();
-        }
-
-        Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return computeIfPresent(key, computer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
-        if (lookUp == null || lookUp.valueSlice == null) {
-            return false;
-        }
-
-        GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
-        if (res == RETRY) {
-            return computeIfPresent(key, computer);
-        }
-        return res == TRUE;
-    }
-
     // encapsulates finding of the chunk in the skip list and later chunk list traversal
     private Chunk<K, V> findChunk(Object key) {
         Chunk<K, V> c = skiplist.floorEntry(key).getValue();
@@ -883,11 +1027,7 @@ class InternalOakMap<K, V> {
 
     V replace(K key, V value, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return replace(key, value, valueDeserializeTransformer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+        Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp == null || lookUp.valueSlice == null) {
             return null;
         }
@@ -902,11 +1042,7 @@ class InternalOakMap<K, V> {
 
     boolean replace(K key, V oldValue, V newValue, Function<ByteBuffer, V> valueDeserializeTransformer) {
         Chunk<K, V> c = findChunk(key); // find chunk matching key
-        Map.Entry<GemmValueUtils.Result, Chunk.LookUp> resultLookUpEntry = c.lookUp(key);
-        if (resultLookUpEntry.getKey() == RETRY) {
-            return replace(key, oldValue, newValue, valueDeserializeTransformer);
-        }
-        Chunk.LookUp lookUp = resultLookUpEntry.getValue();
+        Chunk.LookUp lookUp = c.lookUp(key);
         if (lookUp == null || lookUp.valueSlice == null) {
             return false;
         }
@@ -1126,9 +1262,23 @@ class InternalOakMap<K, V> {
 
             // Key is duplicated
             long keyStats = state.getChunk().readKeyStats(state.getIndex());
+            long valueStats;
+            int valueGeneration;
             Map.Entry<Integer, Long> value = null;
             if (needsValue) {
-                value = state.getChunk().getConsistentValueStatsFromEntry(state.getIndex());
+                do {
+                    valueGeneration = state.getChunk().getGeneration(state.getIndex());
+                    valueStats = state.getChunk().getValueStats(state.getIndex());
+                } while (valueGeneration != state.getChunk().getGeneration(state.getIndex()));
+                if (valueStats != NULL_VALUE) {
+                    valueGeneration = state.getChunk().completeLinking(new LookUp(null, valueStats, state.getIndex(),
+                            valueGeneration));
+                    if (valueGeneration == INVALID_GENERATION) {
+                        advanceState();
+                        return advance(true);
+                    }
+                }
+                value = new AbstractMap.SimpleImmutableEntry<>(valueGeneration, valueStats);
             }
             advanceState();
             return new AbstractMap.SimpleImmutableEntry<>(keyStats, value);
@@ -1259,8 +1409,8 @@ class InternalOakMap<K, V> {
             }
             AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(valueSlice, transformer,
                     generation);
-            return (res.getKey() == RETRY) ? getValueTransformation(getKeyBufferFromStats(keyStats),
-                    transformer) : res.getValue();
+            return (res.getKey() == RETRY) ? getValueTransformation(getKeyBufferFromStats(keyStats), transformer)
+                    : res.getValue();
         }
     }
 
@@ -1387,25 +1537,4 @@ class InternalOakMap<K, V> {
         return new KeyTransformIterator<>(lo, loInclusive, hi, hiInclusive, isDescending, transformer);
     }
 
-    static class Result<V> {
-        final V value;
-        final boolean flag;
-        final boolean hasValue;
-
-        private Result(V value, boolean flag, boolean hasValue) {
-            this.value = value;
-            this.flag = flag;
-            this.hasValue = hasValue;
-
-        }
-
-        static <V> Result<V> withValue(V value) {
-            return new Result<>(value, false, true);
-        }
-
-        static <V> Result<V> withFlag(boolean flag) {
-            return new Result<>(null, flag, false);
-        }
-
-    }
 }

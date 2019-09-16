@@ -11,6 +11,7 @@ import java.util.function.Function;
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
 import static com.oath.oak.GemmAllocator.GEMM_HEADER_SIZE;
+import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
 import static com.oath.oak.GemmValueOperationsImpl.LockStates.*;
 import static com.oath.oak.GemmValueUtils.Result.FALSE;
 import static com.oath.oak.GemmValueUtils.Result.TRUE;
@@ -186,6 +187,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     @Override
     public Result lockRead(Slice s, int generation) {
         int lockState;
+        assert generation > INVALID_GENERATION;
         do {
             int oldGeneration = getInt(s, 0);
             if (oldGeneration != generation) {
@@ -206,8 +208,10 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
     @Override
     public Result unlockRead(Slice s, int generation) {
         int lockState;
+        assert generation > INVALID_GENERATION;
         do {
             lockState = getInt(s, getLockLocation());
+            assert lockState > MOVED.value;
             lockState &= ~LOCK_MASK;
         } while (!CAS(s, lockState, lockState - (1 << LOCK_SHIFT), generation));
         return TRUE;
@@ -215,6 +219,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
 
     @Override
     public Result lockWrite(Slice s, int generation) {
+        assert generation > INVALID_GENERATION;
         do {
             int oldGeneration = getInt(s, 0);
             if (oldGeneration != generation) {
@@ -239,6 +244,7 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
 
     @Override
     public Result deleteValue(Slice s, int generation) {
+        assert generation > INVALID_GENERATION;
         do {
             int oldGeneration = getInt(s, 0);
             if (oldGeneration != generation) {
