@@ -10,7 +10,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class GemmAllocator implements Closeable {
     static final int RELEASE_LIST_LIMIT = 1024;
     static final int GEMM_HEADER_SIZE = 4;
-    static final int INVALID_GENERATION = -1;
+    static final long NULL_VALUE = 0;
+    static final int INVALID_GENERATION = 0;
     private ThreadIndexCalculator threadIndexCalculator;
     private List<List<Slice>> releaseLists;
     private AtomicInteger globalGemmNumber;
@@ -22,7 +23,7 @@ public class GemmAllocator implements Closeable {
         for (int i = 0; i < ThreadIndexCalculator.MAX_THREADS; i++) {
             this.releaseLists.add(new ArrayList<>(RELEASE_LIST_LIMIT));
         }
-        globalGemmNumber = new AtomicInteger(0);
+        globalGemmNumber = new AtomicInteger(1);
         this.manager = manager;
     }
 

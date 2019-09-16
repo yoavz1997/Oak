@@ -28,4 +28,6 @@ public interface GemmValueUtils {
     Result deleteValue(Slice s, int generation);
 
     Result isValueDeleted(Slice s, int generation);
+
+    int getOffHeapGeneration(Slice s);
 }
