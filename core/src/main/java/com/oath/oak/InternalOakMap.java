@@ -939,6 +939,22 @@ class InternalOakMap<K, V> {
         }
     }
 
+    private LookUp getValueFromIndex(ByteBuffer key) {
+        K deserializedKey = keySerializer.deserialize(key);
+        while (true) {
+            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk.LookUp lookUp = c.lookUp(deserializedKey);
+            if (lookUp == null || lookUp.valueSlice == null) {
+                return null;
+            }
+
+            if (updateGenerationAfterLinking(c, lookUp)) {
+                continue;
+            }
+            return lookUp;
+        }
+    }
+
     private <T> T getValueTransformation(ByteBuffer key, Function<ByteBuffer, T> transformer) {
         K deserializedKey = keySerializer.deserialize(key);
         return getValueTransformation(deserializedKey, transformer);
@@ -1459,10 +1475,23 @@ class InternalOakMap<K, V> {
             if (res == FALSE) {
                 return null;
             } else if (res == RETRY) {
-                serializedValue = getValueTransformation(getKeyBufferFromStats(keyStats), byteBuffer -> byteBuffer);
-            } else {
-                serializedValue = operator.getActualValue(valueSlice.readOnly());
+                while (true) {
+                    LookUp lookUp = getValueFromIndex(getKeyBufferFromStats(keyStats));
+                    if (lookUp == null || lookUp.valueSlice == null) {
+                        return null;
+                    }
+                    res = operator.lockRead(lookUp.valueSlice, lookUp.generation);
+                    if (res == TRUE) {
+                        valueStats = lookUp.valueStats;
+                        valueSlice = lookUp.valueSlice;
+                        generation = lookUp.generation;
+                        break;
+                    } else if (res == FALSE) {
+                        return null;
+                    }
+                }
             }
+            serializedValue = operator.getActualValue(valueSlice.readOnly());
             Map.Entry<ByteBuffer, ByteBuffer> entry =
                     new AbstractMap.SimpleEntry<>(getKeyBufferFromStats(keyStats).asReadOnlyBuffer(), serializedValue);
 
