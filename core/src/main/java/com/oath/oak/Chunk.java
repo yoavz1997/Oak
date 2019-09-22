@@ -372,6 +372,7 @@ public class Chunk<K, V> {
             Slice valueSlice = buildValueSlice(lookUp.valueStats);
             int offHeapGeneration = operator.getOffHeapGeneration(valueSlice);
             intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_GENERATION, entryGeneration, offHeapGeneration);
+            lookUp.generation = offHeapGeneration;
             return offHeapGeneration;
         } finally {
             unpublish();
@@ -783,7 +784,7 @@ public class Chunk<K, V> {
             // try to find a continuous interval to copy
             // we cannot enlarge interval: if key is removed (handle index is -1) or
             // if this chunk already has all entries to start with
-            if ((currSrcValueBlock != INVALID_BLOCK_ID) && (sortedEntryIndex + entriesToCopy * FIELDS <= maxIdx)) {
+            if ((currSrcValueBlock != INVALID_BLOCK_ID) && (sortedEntryIndex + entriesToCopy * FIELDS < maxIdx)) {
                 // we can enlarge the interval, if it is otherwise possible:
                 // if this is first entry in the interval (we need to copy one entry anyway) OR
                 // if (on the source chunk) current entry idx directly follows the previous entry idx
@@ -824,7 +825,7 @@ public class Chunk<K, V> {
                 srcEntryIdx = srcChunk.getEntryField(srcEntryIdx, OFFSET.NEXT);
             }
 
-            if (srcEntryIdx == NONE || sortedEntryIndex > maxIdx) {
+            if (srcEntryIdx == NONE || sortedEntryIndex >= maxIdx) {
                 break; // if we are done
             }
 

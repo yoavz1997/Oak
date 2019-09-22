@@ -13,7 +13,7 @@ public class GemmAllocatorTest {
         long oldGeneration = gemmAllocator.getCurrentGeneration();
         Slice[] allocatedSlices = new Slice[GemmAllocator.RELEASE_LIST_LIMIT];
         for (int i = 0; i < GemmAllocator.RELEASE_LIST_LIMIT; i++) {
-            allocatedSlices[i] = gemmAllocator.allocateSlice(i + 5);
+            allocatedSlices[i] = gemmAllocator.allocateSlice(i + 5).duplicate();
         }
         for (int i = 0; i < GemmAllocator.RELEASE_LIST_LIMIT; i++) {
             assertEquals(i + 5, allocatedSlices[i].getByteBuffer().remaining());

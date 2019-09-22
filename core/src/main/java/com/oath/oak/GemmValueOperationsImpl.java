@@ -219,7 +219,9 @@ public class GemmValueOperationsImpl implements GemmValueOperations {
 
     @Override
     public Result lockWrite(Slice s, int generation) {
-        assert generation > INVALID_GENERATION;
+        if (generation <= INVALID_GENERATION) {
+            assert false;
+        }
         do {
             int oldGeneration = getInt(s, 0);
             if (oldGeneration != generation) {

@@ -185,7 +185,8 @@ public class OakNativeMemoryAllocatorTest {
         // (2) check the two blocks in the allocator
         assertEquals(ma.numOfAllocatedBlocks(), 2);
         // mind no addition of the size of integer key, as it was allocated in the previous block
-        assertEquals(valueSizeAfterSerialization + operator.getHeaderSize(), ma.getCurrentBlock().allocated());   // check the newest block allocation
+        assertEquals(valueSizeAfterSerialization + operator.getHeaderSize(), ma.getCurrentBlock().allocated());   //
+        // check the newest block allocation
         assertEquals((operator.getHeaderSize() + valueSizeAfterSerialization) * oak.entrySet().size() + keysSizeAfterSerialization,
                 ma.allocated());   // check the total allocation
         // check that what you read is the same that you wrote
@@ -204,7 +205,8 @@ public class OakNativeMemoryAllocatorTest {
         // (2) check the 3 blocks in the allocator
         assertEquals(ma.numOfAllocatedBlocks(), 3);
         // mind no addition of the size of integer key, as it was allocated in the previous block
-        assertEquals(valueSizeAfterSerialization + operator.getHeaderSize(), ma.getCurrentBlock().allocated());   // check the newest block allocation
+        assertEquals(valueSizeAfterSerialization + operator.getHeaderSize(), ma.getCurrentBlock().allocated());   //
+        // check the newest block allocation
         assertEquals((valueSizeAfterSerialization + operator.getHeaderSize()) * oak.entrySet().size() + keysSizeAfterSerialization,
                 ma.allocated());   // check the total allocation
         // check that what you read is the same that you wrote
@@ -248,7 +250,7 @@ public class OakNativeMemoryAllocatorTest {
         // Order is important here!
         int[] sizes = new int[]{4, 16, 8, 32};
         List<ByteBuffer> allocated = Arrays.stream(sizes)
-                .mapToObj(allocator::allocate)
+                .mapToObj(allocator::allocate).map(ByteBuffer::duplicate)
                 .collect(Collectors.toList());
         int bytesAllocated = IntStream.of(sizes).sum();
 
