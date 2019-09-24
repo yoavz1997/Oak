@@ -463,7 +463,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateGenerationAfterLinking(c, lookUp)) {
+                if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
                 return false;
@@ -699,7 +699,7 @@ class InternalOakMap<K, V> {
                 continue;
             }
 
-            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
             if (result == RETRY) {
                 continue;
             }
