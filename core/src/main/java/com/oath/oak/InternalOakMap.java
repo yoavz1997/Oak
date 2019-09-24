@@ -463,8 +463,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (c.completeLinking(lookUp) == INVALID_VERSION) {
-                    rebalance(c);
+                if (updateGenerationAfterLinking(c, lookUp)) {
                     continue;
                 }
                 return false;
@@ -607,7 +606,7 @@ class InternalOakMap<K, V> {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
             Chunk.LookUp lookUp = c.lookUp(key);
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateVersionAfterLinking((Chunk<K, V>) c, lookUp)) {
+                if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
                 NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
@@ -671,12 +670,10 @@ class InternalOakMap<K, V> {
     }
 
     private boolean updateVersionAfterLinking(Chunk<K, V> c, LookUp lookUp) {
-        int valueVersion = c.completeLinking(lookUp);
-        if (valueVersion == INVALID_VERSION) {
+        if (c.completeLinking(lookUp) == INVALID_VERSION) {
             rebalance(c);
             return true;
         }
-        lookUp.version = valueVersion;
         return false;
     }
 
@@ -702,12 +699,7 @@ class InternalOakMap<K, V> {
                 continue;
             }
 
-            if (c.completeLinking(lookUp) == INVALID_VERSION) {
-                rebalance(c);
-                continue;
-            }
-
-            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
+            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
             if (result == RETRY) {
                 continue;
             }
@@ -737,11 +729,6 @@ class InternalOakMap<K, V> {
             }
 
             if (inTheMiddleOfRebalance(c) || updateVersionAfterLinking(c, lookUp)) {
-                continue;
-            }
-
-            if (c.completeLinking(lookUp) == INVALID_VERSION) {
-                rebalance(c);
                 continue;
             }
 
@@ -778,8 +765,7 @@ class InternalOakMap<K, V> {
             if (lookUp == null || lookUp.valueSlice == null) {
                 return null;
             }
-            if (c.completeLinking(lookUp) == INVALID_VERSION) {
-                rebalance(c);
+            if (updateVersionAfterLinking(c, lookUp)) {
                 continue;
             }
             long keyStats = c.readKeyStats(lookUp.entryIndex);
@@ -797,8 +783,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (c.completeLinking(lookUp) == INVALID_VERSION) {
-                    rebalance(c);
+                if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
                 NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
