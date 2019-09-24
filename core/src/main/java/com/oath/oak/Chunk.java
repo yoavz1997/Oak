@@ -521,7 +521,7 @@ public class Chunk<K, V> {
      * if CAS didn't succeed then this means that a rebalancer did this already
      **/
     void unpublish() {
-        assert pendingOps.decrementAndGet() >= 0;
+        pendingOps.decrementAndGet();
     }
 
 //    /**
