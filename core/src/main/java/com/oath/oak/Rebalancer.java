@@ -36,16 +36,16 @@ class Rebalancer<K, V> {
     private int itemsInRange;
     private final Comparator<Object> comparator;
     private final boolean offHeap;
-    private final GemmAllocator memoryManager;
+    private final NovaAllocator memoryManager;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
-    private final GemmValueOperations operator;
+    private final NovaValueOperations operator;
 
     /*-------------- Constructors --------------*/
 
-    Rebalancer(Chunk<K, V> chunk, Comparator<Object> comparator, boolean offHeap, GemmAllocator memoryManager,
+    Rebalancer(Chunk<K, V> chunk, Comparator<Object> comparator, boolean offHeap, NovaAllocator memoryManager,
                OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
-               ThreadIndexCalculator threadIndexCalculator, GemmValueOperations operator) {
+               ThreadIndexCalculator threadIndexCalculator, NovaValueOperations operator) {
         this.rebalanceSize = 2;
         this.maxAfterMergePart = 0.7;
         this.lowThreshold = 0.5;

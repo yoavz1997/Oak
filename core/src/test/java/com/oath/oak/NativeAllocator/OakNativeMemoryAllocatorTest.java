@@ -12,7 +12,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import static junit.framework.TestCase.assertNull;
@@ -23,7 +22,7 @@ import static org.mockito.Mockito.when;
 
 public class OakNativeMemoryAllocatorTest {
     private static int valueSizeAfterSerialization = 4 * 1024 * 1024;
-    private static GemmValueOperationsImpl operator = new GemmValueOperationsImpl();
+    private static NovaValueOperationsImpl operator = new NovaValueOperationsImpl();
 
     public static class CheckOakCapacityValueSerializer implements OakSerializer<Integer> {
 

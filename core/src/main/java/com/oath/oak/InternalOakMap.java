@@ -16,9 +16,9 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.oath.oak.Chunk.*;
-import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
-import static com.oath.oak.GemmAllocator.NULL_VALUE;
-import static com.oath.oak.GemmValueUtils.Result.*;
+import static com.oath.oak.NovaAllocator.INVALID_VERSION;
+import static com.oath.oak.NovaAllocator.NULL_VALUE;
+import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.longToInts;
 
@@ -30,7 +30,7 @@ class InternalOakMap<K, V> {
     private final AtomicReference<Chunk<K, V>> head;
     private final ByteBuffer minKey;
     private final Comparator<Object> comparator;
-    private final GemmAllocator memoryManager;
+    private final NovaAllocator memoryManager;
     private final AtomicInteger size;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
@@ -39,7 +39,7 @@ class InternalOakMap<K, V> {
     // OakMaps (including subMaps and Views) when all of the above are closed,
     // his map can be closed and memory released.
     private final AtomicInteger referenceCount = new AtomicInteger(1);
-    private final GemmValueOperations operator;
+    private final NovaValueOperations operator;
     /*-------------- Constructors --------------*/
 
     /**
@@ -51,10 +51,10 @@ class InternalOakMap<K, V> {
             OakSerializer<K> keySerializer,
             OakSerializer<V> valueSerializer,
             Comparator<Object> comparator,
-            GemmAllocator memoryManager,
+            NovaAllocator memoryManager,
             int chunkMaxItems,
             int chunkBytesPerItem,
-            ThreadIndexCalculator threadIndexCalculator, GemmValueOperations operator) {
+            ThreadIndexCalculator threadIndexCalculator, NovaValueOperations operator) {
 
         this.size = new AtomicInteger(0);
         this.memoryManager = memoryManager;
@@ -317,7 +317,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateGenerationAfterLinking(c, lookUp)) {
+                if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
                 if (operator.put(c, lookUp, value, valueSerializer, memoryManager) == TRUE) {
@@ -329,7 +329,7 @@ class InternalOakMap<K, V> {
             if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
                 continue;
             }
-            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
 
             // Now the entry's version is invalid
 
@@ -353,11 +353,11 @@ class InternalOakMap<K, V> {
                 }
             }
 
-            int[] generation = new int[1];
-            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+            int[] version = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, version); // write value in place
 
             Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
-                    oldGeneration, generation[0]);
+                    oldVersion, version[0]);
 
             if (!c.publish()) {
                 memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
@@ -385,14 +385,14 @@ class InternalOakMap<K, V> {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
             Chunk.LookUp lookUp = c.lookUp(key);
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateGenerationAfterLinking(c, lookUp)) {
+                if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
                 V v = null;
                 if (transformer != null) {
                     // Todo: Not atomic!
-                    AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
-                            transformer, lookUp.generation);
+                    AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                            transformer, lookUp.version);
                     if (res.getKey() == RETRY) {
                         continue;
                     }
@@ -409,7 +409,7 @@ class InternalOakMap<K, V> {
             if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
                 continue;
             }
-            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
 
             int ei = -1;
             if (lookUp != null) {
@@ -429,11 +429,11 @@ class InternalOakMap<K, V> {
                 }
             }
 
-            int[] generation = new int[1];
-            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+            int[] version = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats, oldGeneration,
-                    generation[0]);
+            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats, oldVersion,
+                    version[0]);
 
             // publish put
             if (!c.publish()) {
@@ -463,7 +463,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (c.completeLinking(lookUp) == INVALID_GENERATION) {
+                if (c.completeLinking(lookUp) == INVALID_VERSION) {
                     rebalance(c);
                     continue;
                 }
@@ -473,7 +473,7 @@ class InternalOakMap<K, V> {
             if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
                 continue;
             }
-            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
 
             // Now the entry's version is invalid
 
@@ -500,11 +500,11 @@ class InternalOakMap<K, V> {
                 }
             }
 
-            int[] generation = new int[1];
-            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+            int[] version = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, version); // write value in place
 
             Chunk.OpData opData = new Chunk.OpData(myEntryIndex, NULL_VALUE, newValueStats,
-                    oldGeneration, generation[0]);
+                    oldVersion, version[0]);
 
             if (!c.publish()) {
                 memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
@@ -533,11 +533,11 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateGenerationAfterLinking(c, lookUp)) {
+                if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
-                AbstractMap.SimpleEntry<GemmValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
-                        transformer, lookUp.generation);
+                AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                        transformer, lookUp.version);
                 if (res.getKey() == TRUE) {
                     return res.getValue();
                 }
@@ -549,7 +549,7 @@ class InternalOakMap<K, V> {
             if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
                 continue;
             }
-            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
 
 
             int ei = -1;
@@ -575,10 +575,10 @@ class InternalOakMap<K, V> {
                 }
             }
 
-            int[] generation = new int[1];
-            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+            int[] version = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, version); // write value in place
             Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
-                    oldGeneration, generation[0]);
+                    oldVersion, version[0]);
 
             // publish put
             if (!c.publish()) {
@@ -607,10 +607,10 @@ class InternalOakMap<K, V> {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
             Chunk.LookUp lookUp = c.lookUp(key);
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateGenerationAfterLinking((Chunk<K, V>) c, lookUp)) {
+                if (updateVersionAfterLinking((Chunk<K, V>) c, lookUp)) {
                     continue;
                 }
-                GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
+                NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
                 if (res == TRUE) {
                     // compute was successful and handle wasn't found deleted; in case
                     // this handle was already found as deleted, continue to construct another handle
@@ -623,7 +623,7 @@ class InternalOakMap<K, V> {
             if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
                 continue;
             }
-            int oldGeneration = lookUp == null ? INVALID_GENERATION : -Math.abs(lookUp.generation);
+            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
 
             int ei = -1;
             if (lookUp != null) {
@@ -647,11 +647,11 @@ class InternalOakMap<K, V> {
                 }
             }
 
-            int[] generation = new int[1];
-            long newValueStats = c.writeValueOffHeap(value, generation); // write value in place
+            int[] version = new int[1];
+            long newValueStats = c.writeValueOffHeap(value, version); // write value in place
 
             Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
-                    oldGeneration, generation[0]);
+                    oldVersion, version[0]);
 
             if (!c.publish()) {
                 memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
@@ -670,13 +670,13 @@ class InternalOakMap<K, V> {
         }
     }
 
-    private boolean updateGenerationAfterLinking(Chunk<K, V> c, LookUp lookUp) {
-        int valueGeneration = c.completeLinking(lookUp);
-        if (valueGeneration == INVALID_GENERATION) {
+    private boolean updateVersionAfterLinking(Chunk<K, V> c, LookUp lookUp) {
+        int valueVersion = c.completeLinking(lookUp);
+        if (valueVersion == INVALID_VERSION) {
             rebalance(c);
             return true;
         }
-        lookUp.generation = valueGeneration;
+        lookUp.version = valueVersion;
         return false;
     }
 
@@ -698,16 +698,16 @@ class InternalOakMap<K, V> {
                 continue;
             }
 
-            if (inTheMiddleOfRebalance(c) || updateGenerationAfterLinking(c, lookUp)) {
+            if (inTheMiddleOfRebalance(c) || updateVersionAfterLinking(c, lookUp)) {
                 continue;
             }
 
-            if (c.completeLinking(lookUp) == INVALID_GENERATION) {
+            if (c.completeLinking(lookUp) == INVALID_VERSION) {
                 rebalance(c);
                 continue;
             }
 
-            GemmValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
             if (result == RETRY) {
                 continue;
             }
@@ -736,18 +736,18 @@ class InternalOakMap<K, V> {
                 continue;
             }
 
-            if (inTheMiddleOfRebalance(c) || updateGenerationAfterLinking(c, lookUp)) {
+            if (inTheMiddleOfRebalance(c) || updateVersionAfterLinking(c, lookUp)) {
                 continue;
             }
 
-            if (c.completeLinking(lookUp) == INVALID_GENERATION) {
+            if (c.completeLinking(lookUp) == INVALID_VERSION) {
                 rebalance(c);
                 continue;
             }
 
             // Todo: Not Atomic!
-            AbstractMap.SimpleEntry<GemmValueUtils.Result, V> resultVSimpleEntry =
-                    operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
+            AbstractMap.SimpleEntry<NovaValueUtils.Result, V> resultVSimpleEntry =
+                    operator.transform(lookUp.valueSlice, transformer, lookUp.version);
             if (resultVSimpleEntry.getKey() == RETRY) {
                 continue;
             }
@@ -756,7 +756,7 @@ class InternalOakMap<K, V> {
                 return null;
             }
 
-            GemmValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.generation);
+            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
             if (result == RETRY) {
                 continue;
             }
@@ -778,12 +778,12 @@ class InternalOakMap<K, V> {
             if (lookUp == null || lookUp.valueSlice == null) {
                 return null;
             }
-            if (c.completeLinking(lookUp) == INVALID_GENERATION) {
+            if (c.completeLinking(lookUp) == INVALID_VERSION) {
                 rebalance(c);
                 continue;
             }
             long keyStats = c.readKeyStats(lookUp.entryIndex);
-            return new OakRValueBufferImpl(lookUp.valueStats, lookUp.generation, keyStats, operator, memoryManager);
+            return new OakRValueBufferImpl(lookUp.valueStats, lookUp.version, keyStats, operator, memoryManager, this);
         }
     }
 
@@ -797,11 +797,11 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (c.completeLinking(lookUp) == INVALID_GENERATION) {
+                if (c.completeLinking(lookUp) == INVALID_VERSION) {
                     rebalance(c);
                     continue;
                 }
-                GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
+                NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
                 if (res == TRUE) {
                     // compute was successful and handle wasn't found deleted; in case
                     // this handle was already found as deleted, continue to construct another handle
@@ -826,11 +826,11 @@ class InternalOakMap<K, V> {
                 return null;
             }
 
-            if (updateGenerationAfterLinking(c, lookUp)) {
+            if (updateVersionAfterLinking(c, lookUp)) {
                 continue;
             }
-            AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer,
-                    lookUp.generation);
+            AbstractMap.SimpleEntry<NovaValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer,
+                    lookUp.version);
             if (res.getKey() == RETRY) {
                 continue;
             }
@@ -838,16 +838,16 @@ class InternalOakMap<K, V> {
         }
     }
 
-    private LookUp getValueFromIndex(ByteBuffer key) {
-        K deserializedKey = keySerializer.deserialize(key);
+    LookUp getValueFromIndex(long keyStats) {
+        K deserializedKey = keySerializer.deserialize(getKeyBufferFromStats(keyStats));
         while (true) {
-            Chunk<K, V> c = findChunk(key); // find chunk matching key
+            Chunk<K, V> c = findChunk(deserializedKey); // find chunk matching key
             Chunk.LookUp lookUp = c.lookUp(deserializedKey);
             if (lookUp == null || lookUp.valueSlice == null) {
                 return null;
             }
 
-            if (updateGenerationAfterLinking(c, lookUp)) {
+            if (updateVersionAfterLinking(c, lookUp)) {
                 continue;
             }
             return lookUp;
@@ -947,7 +947,7 @@ class InternalOakMap<K, V> {
             return null;
         }
         // will return null if handle was deleted between prior lookup and the next call
-        AbstractMap.SimpleEntry<GemmValueUtils.Result, V> result = operator.exchange(c, lookUp, value,
+        AbstractMap.SimpleEntry<NovaValueUtils.Result, V> result = operator.exchange(c, lookUp, value,
                 valueDeserializeTransformer, valueSerializer, memoryManager);
         if (result.getKey() == RETRY) {
             return replace(key, value, valueDeserializeTransformer);
@@ -963,7 +963,7 @@ class InternalOakMap<K, V> {
         }
 
         // res can be null if handle was deleted between lookup and the next call
-        GemmValueUtils.Result res = operator.compareExchange(c, lookUp, oldValue, newValue,
+        NovaValueUtils.Result res = operator.compareExchange(c, lookUp, oldValue, newValue,
                 valueDeserializeTransformer, valueSerializer, memoryManager);
         if (res == RETRY) {
             return replace(key, oldValue, newValue, valueDeserializeTransformer);
@@ -1178,22 +1178,22 @@ class InternalOakMap<K, V> {
             // Key is duplicated
             long keyStats = state.getChunk().readKeyStats(state.getIndex());
             long valueStats;
-            int valueGeneration;
+            int valueVersion;
             Map.Entry<Integer, Long> value = null;
             if (needsValue) {
                 do {
-                    valueGeneration = state.getChunk().getGeneration(state.getIndex());
+                    valueVersion = state.getChunk().getVersion(state.getIndex());
                     valueStats = state.getChunk().getValueStats(state.getIndex());
-                } while (valueGeneration != state.getChunk().getGeneration(state.getIndex()));
+                } while (valueVersion != state.getChunk().getVersion(state.getIndex()));
                 if (valueStats != NULL_VALUE) {
-                    valueGeneration = state.getChunk().completeLinking(new LookUp(null, valueStats, state.getIndex(),
-                            valueGeneration));
-                    if (valueGeneration == INVALID_GENERATION) {
+                    valueVersion = state.getChunk().completeLinking(new LookUp(null, valueStats, state.getIndex(),
+                            valueVersion));
+                    if (valueVersion == INVALID_VERSION) {
                         advanceState();
                         return advance(true);
                     }
                 }
-                value = new AbstractMap.SimpleImmutableEntry<>(valueGeneration, valueStats);
+                value = new AbstractMap.SimpleImmutableEntry<>(valueVersion, valueStats);
             }
             advanceState();
             return new AbstractMap.SimpleImmutableEntry<>(keyStats, value);
@@ -1285,8 +1285,12 @@ class InternalOakMap<K, V> {
 
     class ValueIterator extends Iter<OakRBuffer> {
 
-        ValueIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+        private final InternalOakMap<K, V> internalOakMap;
+
+        ValueIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, InternalOakMap<K,
+                V> internalOakMap) {
             super(lo, loInclusive, hi, hiInclusive, isDescending);
+            this.internalOakMap = internalOakMap;
         }
 
         @Override
@@ -1294,12 +1298,12 @@ class InternalOakMap<K, V> {
             Map.Entry<Long, Map.Entry<Integer, Long>> nextItem = advance(true);
             long keyStats = nextItem.getKey();
             long valueStats = nextItem.getValue().getValue();
-            int generation = nextItem.getValue().getKey();
+            int version = nextItem.getValue().getKey();
             if (longToInts(valueStats)[0] == INVALID_BLOCK_ID) {
                 return null;
             }
 
-            return new OakRValueBufferImpl(valueStats, generation, keyStats, operator, memoryManager);
+            return new OakRValueBufferImpl(valueStats, version, keyStats, operator, memoryManager, internalOakMap);
         }
     }
 
@@ -1318,12 +1322,12 @@ class InternalOakMap<K, V> {
             long keyStats = nextItem.getKey();
             long valueStats = nextItem.getValue().getValue();
             Slice valueSlice = getValueSliceFromStats(valueStats);
-            int generation = nextItem.getValue().getKey();
+            int version = nextItem.getValue().getKey();
             if (valueSlice == null) {
                 return null;
             }
-            AbstractMap.SimpleEntry<GemmValueUtils.Result, T> res = operator.transform(valueSlice, transformer,
-                    generation);
+            AbstractMap.SimpleEntry<NovaValueUtils.Result, T> res = operator.transform(valueSlice, transformer,
+                    version);
             return (res.getKey() == RETRY) ? getValueTransformation(getKeyBufferFromStats(keyStats), transformer)
                     : res.getValue();
         }
@@ -1331,21 +1335,25 @@ class InternalOakMap<K, V> {
 
     class EntryIterator extends Iter<Map.Entry<OakRBuffer, OakRBuffer>> {
 
-        EntryIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+        private final InternalOakMap<K, V> internalOakMap;
+
+        EntryIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending, InternalOakMap<K,
+                V> internalOakMap) {
             super(lo, loInclusive, hi, hiInclusive, isDescending);
+            this.internalOakMap = internalOakMap;
         }
 
         public Map.Entry<OakRBuffer, OakRBuffer> next() {
             Map.Entry<Long, Map.Entry<Integer, Long>> nextItem = advance(true);
             long keyStats = nextItem.getKey();
             long valueStats = nextItem.getValue().getValue();
-            int generation = nextItem.getValue().getKey();
+            int version = nextItem.getValue().getKey();
             if (Chunk.isValueThere(longToInts(valueStats))) {
                 return null;
             }
             return new AbstractMap.SimpleImmutableEntry<>(
                     new OakRKeyBufferImpl(keyStats, memoryManager),
-                    new OakRValueBufferImpl(valueStats, generation, keyStats, operator, memoryManager));
+                    new OakRValueBufferImpl(valueStats, version, keyStats, operator, memoryManager, internalOakMap));
         }
     }
 
@@ -1365,25 +1373,25 @@ class InternalOakMap<K, V> {
             long keyStats = nextItem.getKey();
             long valueStats = nextItem.getValue().getValue();
             Slice valueSlice = getValueSliceFromStats(valueStats);
-            int generation = nextItem.getValue().getKey();
+            int version = nextItem.getValue().getKey();
             if (valueSlice == null) {
                 return null;
             }
-            GemmValueUtils.Result res = operator.lockRead(valueSlice, generation);
+            NovaValueUtils.Result res = operator.lockRead(valueSlice, version);
             ByteBuffer serializedValue;
             if (res == FALSE) {
                 return null;
             } else if (res == RETRY) {
                 while (true) {
-                    LookUp lookUp = getValueFromIndex(getKeyBufferFromStats(keyStats));
+                    LookUp lookUp = getValueFromIndex(keyStats);
                     if (lookUp == null || lookUp.valueSlice == null) {
                         return null;
                     }
-                    res = operator.lockRead(lookUp.valueSlice, lookUp.generation);
+                    res = operator.lockRead(lookUp.valueSlice, lookUp.version);
                     if (res == TRUE) {
                         valueStats = lookUp.valueStats;
                         valueSlice = lookUp.valueSlice;
-                        generation = lookUp.generation;
+                        version = lookUp.version;
                         break;
                     } else if (res == FALSE) {
                         return null;
@@ -1396,7 +1404,7 @@ class InternalOakMap<K, V> {
 
             T transformation = transformer.apply(entry);
             valueSlice = getValueSliceFromStats(valueStats);
-            operator.unlockRead(valueSlice, generation);
+            operator.unlockRead(valueSlice, version);
             return transformation;
         }
     }
@@ -1436,12 +1444,12 @@ class InternalOakMap<K, V> {
 
     Iterator<OakRBuffer> valuesBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,
                                                   boolean isDescending) {
-        return new ValueIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        return new ValueIterator(lo, loInclusive, hi, hiInclusive, isDescending, this);
     }
 
     Iterator<Map.Entry<OakRBuffer, OakRBuffer>> entriesBufferViewIterator(K lo, boolean loInclusive, K hi,
                                                                           boolean hiInclusive, boolean isDescending) {
-        return new EntryIterator(lo, loInclusive, hi, hiInclusive, isDescending);
+        return new EntryIterator(lo, loInclusive, hi, hiInclusive, isDescending, this);
     }
 
     Iterator<OakRBuffer> keysBufferViewIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,

@@ -13,9 +13,9 @@ public class OakWBufferImpl implements OakWBuffer {
 
     private Slice s;
     private ByteBuffer bb;
-    private final GemmValueOperations operator;
+    private final NovaValueOperations operator;
 
-    OakWBufferImpl(Slice s, GemmValueOperations operator) {
+    OakWBufferImpl(Slice s, NovaValueOperations operator) {
         this.s = s;
         this.bb = s.getByteBuffer();
         this.operator = operator;

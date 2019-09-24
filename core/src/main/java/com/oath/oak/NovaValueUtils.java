@@ -2,7 +2,7 @@ package com.oath.oak;
 
 import java.nio.ByteBuffer;
 
-public interface GemmValueUtils {
+public interface NovaValueUtils {
     enum Result {
         TRUE, FALSE, RETRY
     }
@@ -17,17 +17,17 @@ public interface GemmValueUtils {
 
     ByteBuffer getActualValue(Slice s);
 
-    Result lockRead(Slice s, int generation);
+    Result lockRead(Slice s, int version);
 
-    Result unlockRead(Slice s, int generation);
+    Result unlockRead(Slice s, int version);
 
-    Result lockWrite(Slice s, int generation);
+    Result lockWrite(Slice s, int version);
 
     Result unlockWrite(Slice s);
 
-    Result deleteValue(Slice s, int generation);
+    Result deleteValue(Slice s, int version);
 
-    Result isValueDeleted(Slice s, int generation);
+    Result isValueDeleted(Slice s, int version);
 
-    int getOffHeapGeneration(Slice s);
+    int getOffHeapVersion(Slice s);
 }

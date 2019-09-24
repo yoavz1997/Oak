@@ -9,19 +9,19 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.oath.oak.GemmValueUtils.Result.*;
+import static com.oath.oak.NovaValueUtils.Result.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class GemmValueUtilsTest {
-    private GemmAllocator gemmAllocator;
+public class NovaValueUtilsTest {
+    private NovaAllocator novaAllocator;
     private Slice s;
-    private final GemmValueUtils operator = new GemmValueOperationsImpl();
+    private final NovaValueUtils operator = new NovaValueOperationsImpl();
 
     @Before
     public void init() {
-        gemmAllocator = new GemmAllocator(new OakNativeMemoryAllocator(128));
-        s = gemmAllocator.allocateSlice(16);
+        novaAllocator = new NovaAllocator(new OakNativeMemoryAllocator(128));
+        s = novaAllocator.allocateSlice(16);
         s.getByteBuffer().putInt(s.getByteBuffer().position(), 1);
     }
 
@@ -204,24 +204,18 @@ public class GemmValueUtilsTest {
         deleter.join();
     }
 
-    private void changeGeneration() {
-        for (int i = 0; i < GemmAllocator.RELEASE_LIST_LIMIT; i++) {
-            gemmAllocator.releaseSlice(gemmAllocator.allocateSlice(1));
-        }
-    }
-
     @Test
-    public void testCannotReadLockDifferentGeneration() {
+    public void testCannotReadLockDifferentVersion() {
         assertEquals(RETRY, operator.lockRead(s, 2));
     }
 
     @Test
-    public void testCannotWriteLockDifferentGeneration() {
+    public void testCannotWriteLockDifferentVersion() {
         assertEquals(RETRY, operator.lockWrite(s, 2));
     }
 
     @Test
-    public void testCannotDeletedDifferentGeneration() {
+    public void testCannotDeletedDifferentVersion() {
         assertEquals(RETRY, operator.deleteValue(s, 2));
     }
 }

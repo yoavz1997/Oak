@@ -16,9 +16,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static com.oath.oak.GemmAllocator.INVALID_GENERATION;
-import static com.oath.oak.GemmAllocator.NULL_VALUE;
-import static com.oath.oak.GemmValueUtils.Result.*;
+import static com.oath.oak.NovaAllocator.INVALID_VERSION;
+import static com.oath.oak.NovaAllocator.NULL_VALUE;
+import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 
@@ -32,7 +32,7 @@ public class Chunk<K, V> {
         // VALUE_STATS is 1, so in total it is always even), so CASing long into an int array would work.
         NEXT(0), KEY_POSITION(3), VALUE_STATS(1), VALUE_POSITION(1),
         VALUE_BLOCK_AND_LENGTH(2), VALUE_BLOCK(2), VALUE_LENGTH(2), KEY_BLOCK_AND_LENGTH(4),
-        KEY_BLOCK(4), KEY_LENGTH(4), VALUE_GENERATION(5);
+        KEY_BLOCK(4), KEY_LENGTH(4), VALUE_VERSION(5);
 
         public final int value;
         public static final int biggestOffset;
@@ -80,7 +80,7 @@ public class Chunk<K, V> {
     public static final int MAX_ITEMS_DEFAULT = 4096;
 
     private static final Unsafe unsafe;
-    private final GemmAllocator memoryManager;
+    private final NovaAllocator memoryManager;
     ByteBuffer minKey;       // minimal key that can be put in this chunk
     AtomicMarkableReference<Chunk<K, V>> next;
     Comparator<Object> comparator;
@@ -102,7 +102,7 @@ public class Chunk<K, V> {
     // for writing the keys into the bytebuffers
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
-    private final GemmValueOperations operator;
+    private final NovaValueOperations operator;
 
     /*-------------- Constructors --------------*/
 
@@ -123,9 +123,9 @@ public class Chunk<K, V> {
      * @param minKey  minimal key to be placed in chunk
      * @param creator the chunk that is responsible for this chunk creation
      */
-    Chunk(ByteBuffer minKey, Chunk<K, V> creator, Comparator<Object> comparator, GemmAllocator memoryManager,
+    Chunk(ByteBuffer minKey, Chunk<K, V> creator, Comparator<Object> comparator, NovaAllocator memoryManager,
           int maxItems, AtomicInteger externalSize, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
-          GemmValueOperations operator) {
+          NovaValueOperations operator) {
         this.memoryManager = memoryManager;
         this.maxItems = maxItems;
         this.entries = new int[maxItems * FIELDS + FIRST_ITEM];
@@ -155,16 +155,16 @@ public class Chunk<K, V> {
         final int entryIndex;
         final long newValueStats;
         long oldValueStats;
-        final int oldGeneration;
-        final int newGeneration;
+        final int oldVersion;
+        final int newVersion;
 
         OpData(int entryIndex, long oldValueStats, long newValueStats,
-               int oldGeneration, int newGeneration) {
+               int oldVersion, int newVersion) {
             this.entryIndex = entryIndex;
             this.newValueStats = newValueStats;
             this.oldValueStats = oldValueStats;
-            this.oldGeneration = oldGeneration;
-            this.newGeneration = newGeneration;
+            this.oldVersion = oldVersion;
+            this.newVersion = newVersion;
         }
     }
 
@@ -257,8 +257,8 @@ public class Chunk<K, V> {
         return readKey(maxEntry);
     }
 
-    int getGeneration(int item) {
-        return getEntryField(item, OFFSET.VALUE_GENERATION);
+    int getVersion(int item) {
+        return getEntryField(item, OFFSET.VALUE_VERSION);
     }
 
     /**
@@ -360,28 +360,28 @@ public class Chunk<K, V> {
     }
 
     int completeLinking(LookUp lookUp) {
-        int entryGeneration = lookUp.generation;
+        int entryVersion = lookUp.version;
         // no need to complete a thing
-        if (entryGeneration > INVALID_GENERATION) {
-            return entryGeneration;
+        if (entryVersion > INVALID_VERSION) {
+            return entryVersion;
         }
         if (!publish()) {
-            return INVALID_GENERATION;
+            return INVALID_VERSION;
         }
         try {
             Slice valueSlice = buildValueSlice(lookUp.valueStats);
-            int offHeapGeneration = operator.getOffHeapGeneration(valueSlice);
-            intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_GENERATION, entryGeneration, offHeapGeneration);
-            lookUp.generation = offHeapGeneration;
-            return offHeapGeneration;
+            int offHeapVersion = operator.getOffHeapVersion(valueSlice);
+            intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_VERSION, entryVersion, offHeapVersion);
+            lookUp.version = offHeapVersion;
+            return offHeapVersion;
         } finally {
             unpublish();
         }
     }
 
-    GemmValueUtils.Result finalizeDeletion(LookUp lookUp) {
-        int generation = lookUp.generation;
-        if (generation <= INVALID_GENERATION) {
+    NovaValueUtils.Result finalizeDeletion(LookUp lookUp) {
+        int version = lookUp.version;
+        if (version <= INVALID_VERSION) {
             return FALSE;
         }
         if (!publish()) {
@@ -391,7 +391,7 @@ public class Chunk<K, V> {
             if (!longCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_STATS, lookUp.valueStats, NULL_VALUE)) {
                 return FALSE;
             }
-            if (!intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_GENERATION, generation, -generation)) {
+            if (!intCasEntriesArray(lookUp.entryIndex, OFFSET.VALUE_VERSION, version, -version)) {
                 return FALSE;
             }
             externalSize.decrementAndGet();
@@ -422,23 +422,23 @@ public class Chunk<K, V> {
             // if keys are equal - we've found the item
             else if (cmp == 0) {
                 long valueStats;
-                int generation;
-                // Atomic snapshot of generation and value stats
+                int version;
+                // Atomic snapshot of version and value stats
                 do {
-                    generation = getGeneration(curr);
+                    version = getVersion(curr);
                     valueStats = getValueStats(curr);
-                } while (generation != getGeneration(curr));
+                } while (version != getVersion(curr));
                 Slice valueSlice = buildValueSlice(valueStats);
                 if (valueSlice == null) {
                     assert valueStats == 0;
-                    return new LookUp(null, valueStats, curr, generation);
+                    return new LookUp(null, valueStats, curr, version);
                 }
-                GemmValueUtils.Result result = operator.isValueDeleted(valueSlice, generation);
+                NovaValueUtils.Result result = operator.isValueDeleted(valueSlice, version);
                 if (result == TRUE) {
-                    return new LookUp(null, valueStats, curr, generation);
+                    return new LookUp(null, valueStats, curr, version);
                 }
                 // TODO: if result == RETRY, I ignore it, since it will be discovered later down the line as well
-                return new LookUp(valueSlice, valueStats, curr, generation);
+                return new LookUp(valueSlice, valueStats, curr, version);
             }
             // otherwise- proceed to next item
             else {
@@ -453,13 +453,13 @@ public class Chunk<K, V> {
         final Slice valueSlice;
         final long valueStats;
         final int entryIndex;
-        int generation;
+        int version;
 
-        LookUp(Slice valueSlice, long valueStats, int entryIndex, int generation) {
+        LookUp(Slice valueSlice, long valueStats, int entryIndex, int version) {
             this.valueSlice = valueSlice;
             this.valueStats = valueStats;
             this.entryIndex = entryIndex;
-            this.generation = generation;
+            this.version = version;
         }
     }
 
@@ -547,7 +547,7 @@ public class Chunk<K, V> {
         // key and value must be set before linking to the list so it will make sense when reached before put is done
         setEntryField(ei, OFFSET.VALUE_POSITION, 0); // set value index to -1, value is init to null
         setEntryField(ei, OFFSET.VALUE_BLOCK_AND_LENGTH, 0); // set value index to -1, value is init to null
-        setEntryField(ei, OFFSET.VALUE_GENERATION, INVALID_GENERATION);
+        setEntryField(ei, OFFSET.VALUE_VERSION, INVALID_VERSION);
         writeKey(key, ei);
         return ei;
     }
@@ -617,10 +617,10 @@ public class Chunk<K, V> {
     /**
      * write value in place
      **/
-    long writeValueOffHeap(V value, int[] generation) {
+    long writeValueOffHeap(V value, int[] version) {
         int valueLength = valueSerializer.calculateSize(value) + operator.getHeaderSize();
         Slice slice = memoryManager.allocateSlice(valueLength);
-        generation[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
+        version[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock
         slice.getByteBuffer().putInt(slice.getByteBuffer().position() + operator.getLockLocation(), 0);
         // just allocated byte buffer is ensured to have position 0
@@ -643,12 +643,12 @@ public class Chunk<K, V> {
      * if someone else got to it first (helping rebalancer or other operation), returns the old handle
      */
 
-    GemmValueUtils.Result linkValue(OpData opData) {
+    NovaValueUtils.Result linkValue(OpData opData) {
         if (!longCasEntriesArray(opData.entryIndex, OFFSET.VALUE_STATS, opData.oldValueStats,
                 opData.newValueStats)) {
             return FALSE;
         }
-        intCasEntriesArray(opData.entryIndex, OFFSET.VALUE_GENERATION, opData.oldGeneration, opData.newGeneration);
+        intCasEntriesArray(opData.entryIndex, OFFSET.VALUE_VERSION, opData.oldVersion, opData.newVersion);
         if (opData.oldValueStats == NULL_VALUE) {
             assert opData.newValueStats != NULL_VALUE;
             statistics.incrementAddedCount();

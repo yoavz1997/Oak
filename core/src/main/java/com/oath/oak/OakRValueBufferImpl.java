@@ -14,23 +14,25 @@ import java.util.function.Function;
 
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
-import static com.oath.oak.GemmValueUtils.Result.*;
+import static com.oath.oak.NovaValueUtils.Result.*;
 
 // remove header
 public class OakRValueBufferImpl implements OakRBuffer {
-    private final long valueStats;
+    private long valueStats;
     private final long keyStats;
-    private final int generation;
-    private final GemmValueOperations operator;
-    private final GemmAllocator memoryManager;
+    private int version;
+    private final NovaValueOperations operator;
+    private final NovaAllocator memoryManager;
+    private final InternalOakMap<?, ?> internalOakMap;
 
-    OakRValueBufferImpl(long valueStats, int valueGeneration, long keyStats, GemmValueOperations operator,
-                        GemmAllocator memoryManager) {
+    OakRValueBufferImpl(long valueStats, int valueVersion, long keyStats, NovaValueOperations operator,
+                        NovaAllocator memoryManager, InternalOakMap<?, ?> internalOakMap) {
         this.valueStats = valueStats;
         this.keyStats = keyStats;
-        this.generation = valueGeneration;
+        this.version = valueVersion;
         this.operator = operator;
         this.memoryManager = memoryManager;
+        this.internalOakMap = internalOakMap;
     }
 
     private Slice getValueSlice() {
@@ -163,7 +165,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
         if (transformer == null) {
             throw new NullPointerException();
         }
-        Map.Entry<GemmValueUtils.Result, T> result = operator.transform(getValueSlice(), transformer, generation);
+        Map.Entry<NovaValueUtils.Result, T> result = operator.transform(getValueSlice(), transformer, version);
         if (result.getKey() == FALSE) {
             throw new ConcurrentModificationException();
         } else if (result.getKey() == RETRY) {
@@ -183,18 +185,23 @@ public class OakRValueBufferImpl implements OakRBuffer {
     }
 
     private void start(Slice valueSlice) {
-        GemmValueUtils.Result res = operator.lockRead(valueSlice, generation);
+        NovaValueUtils.Result res = operator.lockRead(valueSlice, version);
         if (res == FALSE) {
             throw new ConcurrentModificationException();
         }
         if (res == RETRY) {
-            throw new UnsupportedOperationException();
-            //getValueTransformation
+            Chunk.LookUp lookUp = internalOakMap.getValueFromIndex(keyStats);
+            if (lookUp == null || valueSlice == null) {
+                throw new ConcurrentModificationException();
+            }
+            valueStats = lookUp.valueStats;
+            version = lookUp.version;
+            start(getValueSlice());
         }
     }
 
     private void end(Slice valueSlice) {
-        operator.unlockRead(valueSlice, generation);
+        operator.unlockRead(valueSlice, version);
     }
 
 }

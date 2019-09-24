@@ -37,7 +37,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
      * For any externally used Oak class (OakMap, Iterator, OakBuffer- or OakTransform- View),
      * this specific class is responsible to wrap the internal methods with attach-detach.
      * */
-    private final GemmAllocator memoryManager;
+    private final NovaAllocator memoryManager;
     private final Function<ByteBuffer, K> keyDeserializeTransformer;
     private final Function<ByteBuffer, V> valueDeserializeTransformer;
     private final Function<Map.Entry<ByteBuffer, ByteBuffer>, Map.Entry<K, V>> entryDeserializeTransformer;
@@ -53,8 +53,8 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
 
     // internal constructor, to create OakMap use OakMapBuilder
     OakMap(K minKey, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer, OakComparator<K> oakComparator,
-           int chunkMaxItems, int chunkBytesPerItem, GemmAllocator mm, ThreadIndexCalculator threadIndexCalculator,
-           GemmValueOperations operator) {
+           int chunkMaxItems, int chunkBytesPerItem, NovaAllocator mm, ThreadIndexCalculator threadIndexCalculator,
+           NovaValueOperations operator) {
 
         this.comparator = (o1, o2) -> {
             if (o1 instanceof ByteBuffer) {
@@ -89,7 +89,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
     }
 
     // set constructor, mostly used for subMap
-    private OakMap(InternalOakMap<K, V> internalOakMap, GemmAllocator memoryManager,
+    private OakMap(InternalOakMap<K, V> internalOakMap, NovaAllocator memoryManager,
                    Function<ByteBuffer, K> keyDeserializeTransformer,
                    Function<ByteBuffer, V> valueDeserializeTransformer,
                    Function<Map.Entry<ByteBuffer, ByteBuffer>, Map.Entry<K, V>> entryDeserializeTransformer,
@@ -596,7 +596,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
 
 
     /* ---------------- Package visibility getters for the views methods -------------- */
-    GemmAllocator getMemoryManager() {
+    NovaAllocator getMemoryManager() {
         return memoryManager;
     }
 

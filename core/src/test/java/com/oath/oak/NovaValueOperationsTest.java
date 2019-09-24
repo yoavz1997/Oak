@@ -10,19 +10,19 @@ import java.util.Random;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
-import static com.oath.oak.GemmValueUtils.Result.*;
+import static com.oath.oak.NovaValueUtils.Result.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
-public class GemmValueOperationsTest {
-    private GemmAllocator gemmAllocator;
+public class NovaValueOperationsTest {
+    private NovaAllocator novaAllocator;
     private Slice s;
-    private final GemmValueOperations operator = new GemmValueOperationsImpl();
+    private final NovaValueOperations operator = new NovaValueOperationsImpl();
 
     @Before
     public void init() {
-        gemmAllocator = new GemmAllocator(new OakNativeMemoryAllocator(128));
-        s = gemmAllocator.allocateSlice(20);
+        novaAllocator = new NovaAllocator(new OakNativeMemoryAllocator(128));
+        s = novaAllocator.allocateSlice(20);
         putInt(0, 1);
         putInt(operator.getLockLocation(), 0);
     }
@@ -41,7 +41,7 @@ public class GemmValueOperationsTest {
         putInt(12, 20);
         putInt(16, 30);
 
-        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s,
+        Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s,
                 byteBuffer -> byteBuffer.getInt(0) + byteBuffer.getInt(4) + byteBuffer.getInt(8), 1);
         assertEquals(TRUE, result.getKey());
         assertEquals(60, result.getValue().intValue());
@@ -68,7 +68,7 @@ public class GemmValueOperationsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s,
+            Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s,
                     byteBuffer -> byteBuffer.getInt(4), 1);
             assertEquals(TRUE, result.getKey());
             assertEquals(randomValue, result.getValue().intValue());
@@ -102,7 +102,7 @@ public class GemmValueOperationsTest {
                     e.printStackTrace();
                 }
                 int index = new Random().nextInt(3) * 4;
-                Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s,
+                Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s,
                         byteBuffer -> byteBuffer.getInt(index), 1);
                 assertEquals(TRUE, result.getKey());
                 assertEquals(10 + index, result.getValue().intValue());
@@ -121,13 +121,13 @@ public class GemmValueOperationsTest {
     @Test
     public void cannotTransformDeletedTest() {
         operator.deleteValue(s, 1);
-        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 1);
+        Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 1);
         assertEquals(FALSE, result.getKey());
     }
 
     @Test
-    public void cannotTransformedDifferentGenerationTest() {
-        Map.Entry<GemmValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 2);
+    public void cannotTransformedDifferentVersionTest() {
+        Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 2);
         assertEquals(RETRY, result.getKey());
     }
 
@@ -156,7 +156,7 @@ public class GemmValueOperationsTest {
             public int calculateSize(Integer object) {
                 return 0;
             }
-        }, gemmAllocator));
+        }, novaAllocator));
         assertEquals(randomValues[0], getInt(8));
         assertEquals(randomValues[1], getInt(12));
         assertEquals(randomValues[2], getInt(16));
@@ -180,7 +180,7 @@ public class GemmValueOperationsTest {
             public int calculateSize(Integer object) {
                 return 0;
             }
-        }, gemmAllocator);
+        }, novaAllocator);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -201,7 +201,7 @@ public class GemmValueOperationsTest {
             public int calculateSize(Integer object) {
                 return 0;
             }
-        }, gemmAllocator);
+        }, novaAllocator);
     }
 
     @Test
@@ -236,7 +236,7 @@ public class GemmValueOperationsTest {
                 public int calculateSize(Integer object) {
                     return 0;
                 }
-            }, gemmAllocator);
+            }, novaAllocator);
         });
         operator.lockRead(s, 1);
         putter.start();
@@ -289,7 +289,7 @@ public class GemmValueOperationsTest {
                 public int calculateSize(Integer object) {
                     return 0;
                 }
-            }, gemmAllocator);
+            }, novaAllocator);
         });
         operator.lockWrite(s, 1);
         putter.start();
@@ -310,13 +310,13 @@ public class GemmValueOperationsTest {
     public void cannotPutInDeletedValueTest() {
         operator.deleteValue(s, 1);
         Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
-        assertEquals(FALSE, operator.put(null, lookUp, null, null, gemmAllocator));
+        assertEquals(FALSE, operator.put(null, lookUp, null, null, novaAllocator));
     }
 
     @Test
-    public void cannotPutToValueOfDifferentGenerationTest() {
+    public void cannotPutToValueOfDifferentVersionTest() {
         Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 2);
-        assertEquals(RETRY, operator.put(null, lookUp, null, null, gemmAllocator));
+        assertEquals(RETRY, operator.put(null, lookUp, null, null, novaAllocator));
     }
 
     @Test
@@ -352,7 +352,7 @@ public class GemmValueOperationsTest {
     }
 
     @Test
-    public void cannotComputeValueOfDifferentGenerationTest() {
+    public void cannotComputeValueOfDifferentVersionTest() {
         assertEquals(RETRY, operator.compute(s, oakWBuffer -> {
         }, 2));
     }

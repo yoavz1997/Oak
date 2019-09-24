@@ -98,7 +98,7 @@ public class ResizeValueTest {
         }
     }
 
-    @Test(expected = ConcurrentModificationException.class)
+    @Test
     public void testResizeWithZCGet() {
         oak.zc().put("A", "");
         OakRBuffer buffer = oak.zc().get("A");
@@ -109,6 +109,6 @@ public class ResizeValueTest {
         }
         String longValue = stringBuilder.toString();
         oak.zc().put("A", longValue);
-        assertEquals(8, buffer.getInt(0));
+        assertEquals(longValue.length(), buffer.getInt(0));
     }
 }

@@ -34,7 +34,7 @@ public class OakMapBuilder<K, V> {
     private int chunkBytesPerItem;
     private long memoryCapacity;
     private OakBlockMemoryAllocator memoryAllocator;
-    private GemmValueOperations operator;
+    private NovaValueOperations operator;
 
     public OakMapBuilder() {
         this.keySerializer = null;
@@ -47,7 +47,7 @@ public class OakMapBuilder<K, V> {
         this.chunkMaxItems = Chunk.MAX_ITEMS_DEFAULT;
         this.memoryCapacity = MAX_MEM_CAPACITY;
         this.memoryAllocator = null;
-        this.operator = new GemmValueOperationsImpl();
+        this.operator = new NovaValueOperationsImpl();
     }
 
     public OakMapBuilder<K, V> setKeySerializer(OakSerializer<K> keySerializer) {
@@ -97,7 +97,7 @@ public class OakMapBuilder<K, V> {
             this.memoryAllocator = new OakNativeMemoryAllocator(memoryCapacity);
         }
 
-        GemmAllocator memoryManager = new GemmAllocator(memoryAllocator);
+        NovaAllocator memoryManager = new NovaAllocator(memoryAllocator);
 
         return new OakMap<>(
                 minKey,
