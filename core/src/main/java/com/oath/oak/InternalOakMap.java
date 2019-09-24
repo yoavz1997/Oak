@@ -463,8 +463,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (c.completeLinking(lookUp) == INVALID_GENERATION) {
-                    rebalance(c);
+                if (updateGenerationAfterLinking(c, lookUp)) {
                     continue;
                 }
                 return false;
@@ -607,7 +606,7 @@ class InternalOakMap<K, V> {
             Chunk<K, V> c = findChunk(key); // find chunk matching key
             Chunk.LookUp lookUp = c.lookUp(key);
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateGenerationAfterLinking((Chunk<K, V>) c, lookUp)) {
+                if (updateGenerationAfterLinking(c, lookUp)) {
                     continue;
                 }
                 GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
@@ -671,12 +670,10 @@ class InternalOakMap<K, V> {
     }
 
     private boolean updateGenerationAfterLinking(Chunk<K, V> c, LookUp lookUp) {
-        int valueGeneration = c.completeLinking(lookUp);
-        if (valueGeneration == INVALID_GENERATION) {
+        if (c.completeLinking(lookUp) == INVALID_GENERATION) {
             rebalance(c);
             return true;
         }
-        lookUp.generation = valueGeneration;
         return false;
     }
 
@@ -699,11 +696,6 @@ class InternalOakMap<K, V> {
             }
 
             if (inTheMiddleOfRebalance(c) || updateGenerationAfterLinking(c, lookUp)) {
-                continue;
-            }
-
-            if (c.completeLinking(lookUp) == INVALID_GENERATION) {
-                rebalance(c);
                 continue;
             }
 
@@ -740,11 +732,6 @@ class InternalOakMap<K, V> {
                 continue;
             }
 
-            if (c.completeLinking(lookUp) == INVALID_GENERATION) {
-                rebalance(c);
-                continue;
-            }
-
             // Todo: Not Atomic!
             AbstractMap.SimpleEntry<GemmValueUtils.Result, V> resultVSimpleEntry =
                     operator.transform(lookUp.valueSlice, transformer, lookUp.generation);
@@ -778,8 +765,7 @@ class InternalOakMap<K, V> {
             if (lookUp == null || lookUp.valueSlice == null) {
                 return null;
             }
-            if (c.completeLinking(lookUp) == INVALID_GENERATION) {
-                rebalance(c);
+            if (updateGenerationAfterLinking(c, lookUp)) {
                 continue;
             }
             long keyStats = c.readKeyStats(lookUp.entryIndex);
@@ -797,8 +783,7 @@ class InternalOakMap<K, V> {
             Chunk.LookUp lookUp = c.lookUp(key);
 
             if (lookUp != null && lookUp.valueSlice != null) {
-                if (c.completeLinking(lookUp) == INVALID_GENERATION) {
-                    rebalance(c);
+                if (updateGenerationAfterLinking(c, lookUp)) {
                     continue;
                 }
                 GemmValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.generation);
