@@ -15,10 +15,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import com.oath.oak.MemoryManagment.Result;
+
 import static com.oath.oak.Chunk.*;
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
 import static com.oath.oak.NovaAllocator.NULL_VALUE;
-import static com.oath.oak.NovaValueUtils.Result.*;
+import static com.oath.oak.MemoryManagment.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.longToInts;
 
@@ -391,7 +393,7 @@ class InternalOakMap<K, V> {
                 V v = null;
                 if (transformer != null) {
                     // Todo: Not atomic!
-                    AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                    AbstractMap.SimpleEntry<Result, V> res = operator.transform(lookUp.valueSlice,
                             transformer, lookUp.version);
                     if (res.getKey() == RETRY) {
                         continue;
@@ -535,7 +537,7 @@ class InternalOakMap<K, V> {
                 if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
-                AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                AbstractMap.SimpleEntry<Result, V> res = operator.transform(lookUp.valueSlice,
                         transformer, lookUp.version);
                 if (res.getKey() == TRUE) {
                     return res.getValue();
@@ -609,7 +611,7 @@ class InternalOakMap<K, V> {
                 if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
-                NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
+                Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
                 if (res == TRUE) {
                     // compute was successful and handle wasn't found deleted; in case
                     // this handle was already found as deleted, continue to construct another handle
@@ -699,7 +701,7 @@ class InternalOakMap<K, V> {
                 continue;
             }
 
-            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
+            Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
             if (result == RETRY) {
                 continue;
             }
@@ -733,7 +735,7 @@ class InternalOakMap<K, V> {
             }
 
             // Todo: Not Atomic!
-            AbstractMap.SimpleEntry<NovaValueUtils.Result, V> resultVSimpleEntry =
+            AbstractMap.SimpleEntry<Result, V> resultVSimpleEntry =
                     operator.transform(lookUp.valueSlice, transformer, lookUp.version);
             if (resultVSimpleEntry.getKey() == RETRY) {
                 continue;
@@ -743,7 +745,7 @@ class InternalOakMap<K, V> {
                 return null;
             }
 
-            NovaValueUtils.Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
+            Result result = operator.remove(lookUp.valueSlice, memoryManager, lookUp.version);
             if (result == RETRY) {
                 continue;
             }
@@ -786,7 +788,7 @@ class InternalOakMap<K, V> {
                 if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
-                NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
+                Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
                 if (res == TRUE) {
                     // compute was successful and handle wasn't found deleted; in case
                     // this handle was already found as deleted, continue to construct another handle
@@ -814,7 +816,7 @@ class InternalOakMap<K, V> {
             if (updateVersionAfterLinking(c, lookUp)) {
                 continue;
             }
-            AbstractMap.SimpleEntry<NovaValueUtils.Result, T> res = operator.transform(lookUp.valueSlice, transformer,
+            AbstractMap.SimpleEntry<Result, T> res = operator.transform(lookUp.valueSlice, transformer,
                     lookUp.version);
             if (res.getKey() == RETRY) {
                 continue;
@@ -932,7 +934,7 @@ class InternalOakMap<K, V> {
             return null;
         }
         // will return null if handle was deleted between prior lookup and the next call
-        AbstractMap.SimpleEntry<NovaValueUtils.Result, V> result = operator.exchange(c, lookUp, value,
+        AbstractMap.SimpleEntry<Result, V> result = operator.exchange(c, lookUp, value,
                 valueDeserializeTransformer, valueSerializer, memoryManager);
         if (result.getKey() == RETRY) {
             return replace(key, value, valueDeserializeTransformer);
@@ -948,7 +950,7 @@ class InternalOakMap<K, V> {
         }
 
         // res can be null if handle was deleted between lookup and the next call
-        NovaValueUtils.Result res = operator.compareExchange(c, lookUp, oldValue, newValue,
+        Result res = operator.compareExchange(c, lookUp, oldValue, newValue,
                 valueDeserializeTransformer, valueSerializer, memoryManager);
         if (res == RETRY) {
             return replace(key, oldValue, newValue, valueDeserializeTransformer);
@@ -1311,7 +1313,7 @@ class InternalOakMap<K, V> {
             if (valueSlice == null) {
                 return null;
             }
-            AbstractMap.SimpleEntry<NovaValueUtils.Result, T> res = operator.transform(valueSlice, transformer,
+            AbstractMap.SimpleEntry<Result, T> res = operator.transform(valueSlice, transformer,
                     version);
             return (res.getKey() == RETRY) ? getValueTransformation(getKeyBufferFromStats(keyStats), transformer)
                     : res.getValue();
@@ -1362,7 +1364,7 @@ class InternalOakMap<K, V> {
             if (valueSlice == null) {
                 return null;
             }
-            NovaValueUtils.Result res = operator.lockRead(valueSlice, version);
+            Result res = operator.lockRead(valueSlice, version);
             ByteBuffer serializedValue;
             if (res == FALSE) {
                 return null;

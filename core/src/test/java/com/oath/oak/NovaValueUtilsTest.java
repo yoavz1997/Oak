@@ -9,7 +9,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.oath.oak.NovaValueUtils.Result.*;
+import static com.oath.oak.MemoryManagment.Result.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 

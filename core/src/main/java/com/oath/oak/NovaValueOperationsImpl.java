@@ -1,5 +1,6 @@
 package com.oath.oak;
 
+import com.oath.oak.MemoryManagment.Result;
 import sun.misc.Unsafe;
 import sun.nio.ch.DirectBuffer;
 
@@ -10,10 +11,10 @@ import java.util.function.Function;
 
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
+import static com.oath.oak.MemoryManagment.Result.*;
 import static com.oath.oak.NovaAllocator.NOVA_HEADER_SIZE;
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
 import static com.oath.oak.NovaValueOperationsImpl.LockStates.*;
-import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 import static java.lang.Long.reverseBytes;
 

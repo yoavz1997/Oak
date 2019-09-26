@@ -12,9 +12,11 @@ import java.util.ConcurrentModificationException;
 import java.util.Map;
 import java.util.function.Function;
 
+import com.oath.oak.MemoryManagment.Result;
+
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
-import static com.oath.oak.NovaValueUtils.Result.*;
+import static com.oath.oak.MemoryManagment.Result.*;
 
 // remove header
 public class OakRValueBufferImpl implements OakRBuffer {
@@ -165,7 +167,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
         if (transformer == null) {
             throw new NullPointerException();
         }
-        Map.Entry<NovaValueUtils.Result, T> result = operator.transform(getValueSlice(), transformer, version);
+        Map.Entry<Result, T> result = operator.transform(getValueSlice(), transformer, version);
         if (result.getKey() == FALSE) {
             throw new ConcurrentModificationException();
         } else if (result.getKey() == RETRY) {
@@ -185,7 +187,7 @@ public class OakRValueBufferImpl implements OakRBuffer {
     }
 
     private void start(Slice valueSlice) {
-        NovaValueUtils.Result res = operator.lockRead(valueSlice, version);
+        Result res = operator.lockRead(valueSlice, version);
         if (res == FALSE) {
             throw new ConcurrentModificationException();
         }

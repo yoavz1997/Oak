@@ -1,12 +1,10 @@
 package com.oath.oak;
 
+import com.oath.oak.MemoryManagment.Result;
+
 import java.nio.ByteBuffer;
 
 public interface NovaValueUtils {
-    enum Result {
-        TRUE, FALSE, RETRY
-    }
-
     int getHeaderSize();
 
     int getLockLocation();

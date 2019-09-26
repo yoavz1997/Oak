@@ -1,5 +1,6 @@
 package com.oath.oak;
 
+import com.oath.oak.MemoryManagment.Result;
 import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
 import org.junit.Before;
 import org.junit.Test;
@@ -10,7 +11,7 @@ import java.util.Random;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
-import static com.oath.oak.NovaValueUtils.Result.*;
+import static com.oath.oak.MemoryManagment.Result.*;
 import static org.junit.Assert.*;
 
 public class NovaValueOperationsTest {
@@ -40,7 +41,7 @@ public class NovaValueOperationsTest {
         putInt(12, 20);
         putInt(16, 30);
 
-        Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s,
+        Map.Entry<Result, Integer> result = operator.transform(s,
                 byteBuffer -> byteBuffer.getInt(0) + byteBuffer.getInt(4) + byteBuffer.getInt(8), 1);
         assertEquals(TRUE, result.getKey());
         assertEquals(60, result.getValue().intValue());
@@ -67,7 +68,7 @@ public class NovaValueOperationsTest {
             } catch (InterruptedException | BrokenBarrierException e) {
                 e.printStackTrace();
             }
-            Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s,
+            Map.Entry<Result, Integer> result = operator.transform(s,
                     byteBuffer -> byteBuffer.getInt(4), 1);
             assertEquals(TRUE, result.getKey());
             assertEquals(randomValue, result.getValue().intValue());
@@ -101,7 +102,7 @@ public class NovaValueOperationsTest {
                     e.printStackTrace();
                 }
                 int index = new Random().nextInt(3) * 4;
-                Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s,
+                Map.Entry<Result, Integer> result = operator.transform(s,
                         byteBuffer -> byteBuffer.getInt(index), 1);
                 assertEquals(TRUE, result.getKey());
                 assertEquals(10 + index, result.getValue().intValue());
@@ -120,13 +121,13 @@ public class NovaValueOperationsTest {
     @Test
     public void cannotTransformDeletedTest() {
         operator.deleteValue(s, 1);
-        Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 1);
+        Map.Entry<Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 1);
         assertEquals(FALSE, result.getKey());
     }
 
     @Test
     public void cannotTransformedDifferentVersionTest() {
-        Map.Entry<NovaValueUtils.Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 2);
+        Map.Entry<Result, Integer> result = operator.transform(s, byteBuffer -> byteBuffer.getInt(0), 2);
         assertEquals(RETRY, result.getKey());
     }
 

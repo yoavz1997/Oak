@@ -17,7 +17,7 @@ public class NovaAllocator implements Closeable {
     private AtomicInteger globalNovaNumber;
     private OakBlockMemoryAllocator manager;
 
-    NovaAllocator(OakBlockMemoryAllocator manager) {
+    public NovaAllocator(OakBlockMemoryAllocator manager) {
         this.threadIndexCalculator = ThreadIndexCalculator.newInstance();
         this.releaseLists = new CopyOnWriteArrayList<>();
         for (int i = 0; i < ThreadIndexCalculator.MAX_THREADS; i++) {
@@ -32,7 +32,7 @@ public class NovaAllocator implements Closeable {
         manager.close();
     }
 
-    int getCurrentVersion() {
+    public int getCurrentVersion() {
         return globalNovaNumber.get();
     }
 
@@ -40,14 +40,14 @@ public class NovaAllocator implements Closeable {
         return manager.allocated();
     }
 
-    Slice allocateSlice(int size) {
+    public Slice allocateSlice(int size) {
         Slice s = manager.allocateSlice(size);
         assert s.getByteBuffer().remaining() >= size;
         s.getByteBuffer().putInt(s.getByteBuffer().position(), getCurrentVersion());
         return s;
     }
 
-    void releaseSlice(Slice s) {
+    public void releaseSlice(Slice s) {
         int idx = threadIndexCalculator.getIndex();
         List<Slice> myReleaseList = this.releaseLists.get(idx);
         myReleaseList.add(s.duplicate());
@@ -60,12 +60,12 @@ public class NovaAllocator implements Closeable {
         }
     }
 
-    Slice getSliceFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return new Slice(BlockID, getByteBufferFromBlockID(BlockID, bufferPosition, bufferLength));
+    public Slice getSliceFromBlockID(int blockID, int bufferPosition, int bufferLength) {
+        return new Slice(blockID, getByteBufferFromBlockID(blockID, bufferPosition, bufferLength));
     }
 
-    ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength);
+    public ByteBuffer getByteBufferFromBlockID(int blockID, int bufferPosition, int bufferLength) {
+        return manager.readByteBufferFromBlockID(blockID, bufferPosition, bufferLength);
     }
 
     boolean verifyVersion(Slice s, int version) {

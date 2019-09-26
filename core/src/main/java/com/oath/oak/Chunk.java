@@ -6,6 +6,7 @@
 
 package com.oath.oak;
 
+import com.oath.oak.MemoryManagment.Result;
 import sun.misc.Unsafe;
 
 import java.lang.reflect.Constructor;
@@ -18,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
 import static com.oath.oak.NovaAllocator.NULL_VALUE;
-import static com.oath.oak.NovaValueUtils.Result.*;
+import static com.oath.oak.MemoryManagment.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 
@@ -379,7 +380,7 @@ public class Chunk<K, V> {
         }
     }
 
-    NovaValueUtils.Result finalizeDeletion(LookUp lookUp) {
+    Result finalizeDeletion(LookUp lookUp) {
         int version = lookUp.version;
         if (version <= INVALID_VERSION) {
             return FALSE;
@@ -433,7 +434,7 @@ public class Chunk<K, V> {
                     assert valueStats == 0;
                     return new LookUp(null, valueStats, curr, version);
                 }
-                NovaValueUtils.Result result = operator.isValueDeleted(valueSlice, version);
+                Result result = operator.isValueDeleted(valueSlice, version);
                 if (result == TRUE) {
                     return new LookUp(null, valueStats, curr, version);
                 }
@@ -643,7 +644,7 @@ public class Chunk<K, V> {
      * if someone else got to it first (helping rebalancer or other operation), returns the old handle
      */
 
-    NovaValueUtils.Result linkValue(OpData opData) {
+    Result linkValue(OpData opData) {
         if (!longCasEntriesArray(opData.entryIndex, OFFSET.VALUE_STATS, opData.oldValueStats,
                 opData.newValueStats)) {
             return FALSE;
