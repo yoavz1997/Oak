@@ -11,8 +11,7 @@ import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 
 import static com.oath.oak.NovaValueUtils.Result.*;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.*;
 
 public class NovaValueOperationsTest {
     private NovaAllocator novaAllocator;
@@ -321,27 +320,107 @@ public class NovaValueOperationsTest {
 
     @Test
     public void computeTest() {
-
+        int value = new Random().nextInt(128);
+        putInt(8, value);
+        operator.compute(s, oakWBuffer -> {
+            oakWBuffer.putInt(0, oakWBuffer.getInt(0) * 2);
+        }, 1);
+        assertEquals(value * 2, getInt(8));
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void computeUpperBoundTest() {
-        throw new IndexOutOfBoundsException();
+        operator.compute(s, oakWBuffer -> {
+            oakWBuffer.putInt(12, 10);
+        }, 1);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void computeLowerBoundTest() {
-        throw new IndexOutOfBoundsException();
+        operator.compute(s, oakWBuffer -> {
+            oakWBuffer.putInt(-1, 10);
+        }, 1);
     }
 
     @Test
-    public void cannotComputeReadLockedTest() {
-
+    public void cannotComputeReadLockedTest() throws InterruptedException {
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Random random = new Random();
+        int[] randomValues = new int[3];
+        for (int i = 0; i < randomValues.length; i++) {
+            randomValues[i] = random.nextInt();
+        }
+        putInt(8, randomValues[0]);
+        putInt(12, randomValues[1]);
+        putInt(16, randomValues[2]);
+        Thread computer = new Thread(() -> {
+            try {
+                barrier.await();
+            } catch (InterruptedException | BrokenBarrierException e) {
+                e.printStackTrace();
+            }
+            operator.compute(s, oakWBuffer -> {
+                for (int i = 0; i < 12; i += 4) {
+                    oakWBuffer.putInt(i, oakWBuffer.getInt(i) + 1);
+                }
+            }, 1);
+        });
+        operator.lockRead(s, 1);
+        computer.start();
+        try {
+            barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+        Thread.sleep(2000);
+        int[] results = new int[3];
+        for (int i = 0; i < 3; i++) {
+            results[i] = getInt(i * 4 + 8);
+        }
+        operator.unlockRead(s, 1);
+        computer.join();
+        assertArrayEquals(randomValues, results);
     }
 
     @Test
-    public void cannotComputeWriteLockedTest() {
-
+    public void cannotComputeWriteLockedTest() throws InterruptedException {
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        Random random = new Random();
+        int[] randomValues = new int[3];
+        for (int i = 0; i < randomValues.length; i++) {
+            randomValues[i] = random.nextInt();
+        }
+        putInt(8, randomValues[0] - 1);
+        putInt(12, randomValues[1] - 1);
+        putInt(16, randomValues[2] - 1);
+        Thread computer = new Thread(() -> {
+            try {
+                barrier.await();
+            } catch (InterruptedException | BrokenBarrierException e) {
+                e.printStackTrace();
+            }
+            operator.compute(s, oakWBuffer -> {
+                for (int i = 0; i < 12; i += 4) {
+                    oakWBuffer.putInt(i, oakWBuffer.getInt(i) + 1);
+                }
+            }, 1);
+        });
+        operator.lockWrite(s, 1);
+        computer.start();
+        try {
+            barrier.await();
+        } catch (InterruptedException | BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+        Thread.sleep(2000);
+        for (int i = 8; i < 20; i += 4) {
+            putInt(i, getInt(i) + 1);
+        }
+        operator.unlockWrite(s);
+        computer.join();
+        assertNotEquals(randomValues[0], getInt(8));
+        assertNotEquals(randomValues[1], getInt(12));
+        assertNotEquals(randomValues[2], getInt(16));
     }
 
     @Test

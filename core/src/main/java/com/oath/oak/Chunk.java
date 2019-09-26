@@ -185,7 +185,7 @@ public class Chunk<K, V> {
     /**
      * performs CAS from 'expected' to 'value' for field at specified offset of given item in key array
      */
-    private boolean intCasEntriesArray(int item, OFFSET offset, int expected, int value) {
+    boolean intCasEntriesArray(int item, OFFSET offset, int expected, int value) {
         return unsafe.compareAndSwapInt(entries,
                 Unsafe.ARRAY_INT_BASE_OFFSET + (item + offset.value) * Unsafe.ARRAY_INT_INDEX_SCALE,
                 expected, value);

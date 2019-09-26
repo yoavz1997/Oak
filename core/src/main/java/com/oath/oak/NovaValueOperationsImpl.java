@@ -89,12 +89,12 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         putInt(s, getLockLocation(), MOVED.value);
         memoryManager.releaseSlice(s);
         s = memoryManager.allocateSlice(capacity + getHeaderSize());
-        putInt(s, 0, lookUp.version);
         putInt(s, getLockLocation(), LOCKED.value);
         int valueBlockAndLength =
                 (s.getBlockID() << VALUE_BLOCK_SHIFT) | ((capacity + getHeaderSize()) & VALUE_LENGTH_MASK);
         assert chunk.longCasEntriesArray(lookUp.entryIndex, Chunk.OFFSET.VALUE_STATS, lookUp.valueStats,
                 UnsafeUtils.intsToLong(valueBlockAndLength, s.getByteBuffer().position()));
+        assert chunk.intCasEntriesArray(lookUp.entryIndex, Chunk.OFFSET.VALUE_VERSION, lookUp.version, getInt(s, 0));
         return s;
     }
 
