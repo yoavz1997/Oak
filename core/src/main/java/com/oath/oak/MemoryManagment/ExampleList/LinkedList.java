@@ -6,8 +6,13 @@ import com.oath.oak.MemoryManagment.Result;
 import com.oath.oak.OakComparator;
 import com.oath.oak.OakSerializer;
 
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicMarkableReference;
+import java.util.function.Function;
+
+import static com.oath.oak.MemoryManagment.Result.TRUE;
 
 public class LinkedList<K, V> {
 
@@ -59,7 +64,7 @@ public class LinkedList<K, V> {
         Node<K, V> curr;
         boolean result;
 
-        public Window(Node<K, V> pred, Node<K, V> curr, boolean result) {
+        Window(Node<K, V> pred, Node<K, V> curr, boolean result) {
             this.curr = curr;
             this.pred = pred;
             this.result = result;
@@ -84,7 +89,7 @@ public class LinkedList<K, V> {
                     continue;
                 }
                 Map.Entry<Result, K> resultKEntry = curr.getKey().get(keySerializer);
-                if (resultKEntry.getKey() != Result.TRUE) {
+                if (resultKEntry.getKey() != TRUE) {
                     continue outer;
                 }
                 int comparison = keyComparator.compareKeys(key, resultKEntry.getValue());
@@ -97,12 +102,12 @@ public class LinkedList<K, V> {
         }
     }
 
-    private V put(K key, V value) {
+    public V put(K key, V value) {
         while (true) {
             Window<K, V> window = find(key);
             if (window.result) {
                 Map.Entry<Result, V> resultVEntry = window.curr.getValue().exchange(value, valueSerializer);
-                if (resultVEntry.getKey() != Result.TRUE) {
+                if (resultVEntry.getKey() != TRUE) {
                     continue;
                 }
                 return resultVEntry.getValue();
@@ -111,6 +116,68 @@ public class LinkedList<K, V> {
             Node<K, V> newNode = new Node<>(key, keySerializer, value, valueSerializer, window.curr, manager);
             if (!window.pred.next.compareAndSet(window.curr, newNode, false, false)) {
                 continue;
+            }
+            return null;
+        }
+    }
+
+    public V putIfAbsent(K key, V value) {
+        while (true) {
+            Window<K, V> window = find(key);
+            if (window.result) {
+                Map.Entry<Result, V> resultVEntry = window.curr.getValue().get(valueSerializer);
+                if (resultVEntry.getKey() != TRUE) {
+                    continue;
+                }
+                return resultVEntry.getValue();
+            }
+
+            Node<K, V> newNode = new Node<>(key, keySerializer, value, valueSerializer, window.curr, manager);
+            if (!window.pred.next.compareAndSet(window.curr, newNode, false, false)) {
+                continue;
+            }
+            return null;
+        }
+    }
+
+    public boolean computeIfPresent(K key, Function<V, V> computer) {
+        while (true) {
+            Window<K, V> window = find(key);
+            if (window.result) {
+                Result result = window.curr.getValue().compute(computer, valueSerializer);
+                if (result != TRUE) {
+                    continue;
+                }
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public V remove(K key) {
+        while (true) {
+            Window<K, V> window = find(key);
+            if (window.result) {
+                if (!window.curr.mark()) {
+                    continue;
+                }
+                Map.Entry<Result, V> resultVEntry = window.curr.getValue().delete(valueSerializer);
+                assert resultVEntry.getKey() == TRUE;
+                return resultVEntry.getValue();
+            }
+            return null;
+        }
+    }
+
+    public V get(K key) {
+        while (true) {
+            Window<K, V> window = find(key);
+            if (window.result) {
+                Map.Entry<Result, V> resultVEntry = window.curr.getValue().get(valueSerializer);
+                if (resultVEntry.getKey() != TRUE) {
+                    continue;
+                }
+                return resultVEntry.getValue();
             }
             return null;
         }

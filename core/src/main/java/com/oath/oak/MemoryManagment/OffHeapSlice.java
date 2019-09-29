@@ -17,7 +17,7 @@ public interface OffHeapSlice {
 
     <V> Result compareAndExchange(V expected, V newValue, OakSerializer<V> serializer, Comparator<V> comparator);
 
-    Result delete();
+    <V> Map.Entry<Result, V> delete(OakSerializer<V> serializer);
 
     <V> Result compute(Function<V, V> computer, OakSerializer<V> serializer);
 

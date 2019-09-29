@@ -53,7 +53,7 @@ public class OffHeapSliceImpl implements OffHeapSlice {
         }
     }
 
-    private <V> void writeValue(ByteBuffer bb, V newValue, OakSerializer<V> serializer) {
+    protected <V> void writeValue(ByteBuffer bb, V newValue, OakSerializer<V> serializer) {
         int newLength = serializer.calculateSize(newValue) + utilities.getHeaderSize();
         if (newLength > bb.remaining()) {
             throw new UnsupportedOperationException();
@@ -116,14 +116,15 @@ public class OffHeapSliceImpl implements OffHeapSlice {
     }
 
     @Override
-    public Result delete() {
+    public <V> Map.Entry<Result, V> delete(OakSerializer<V> serializer) {
         ByteBuffer bb = createMyByteBuffer();
         Result result = utilities.deleteValue(bb, version);
         if (result != TRUE) {
-            return result;
+            return new AbstractMap.SimpleImmutableEntry<>(result, null);
         }
+        V oldValue = serializer == null ? null : readValue(bb, serializer);
         novaManager.freeSlice(this);
-        return TRUE;
+        return new AbstractMap.SimpleImmutableEntry<>(TRUE, oldValue);
     }
 
     @Override

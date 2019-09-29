@@ -1,6 +1,8 @@
 package com.oath.oak.MemoryManagment.ZC;
 
 import com.oath.oak.MemoryManagment.Result;
+import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
+import com.oath.oak.OakComparator;
 import com.oath.oak.OakSerializer;
 
 import java.util.Comparator;
@@ -12,9 +14,9 @@ public interface ZcOffHeapSlice {
 
     Map.Entry<Result, OffHeapReadBuffer> get();
 
-    <V> Result compareAndExchange(V expected, V newValue, Comparator<V> comparator);
+    <V> Result compareAndExchange(V expected, V newValue, OakSerializer<V> serializer,OakComparator<V> comparator);
 
     Result delete();
 
-    <V> Result compute(Comparator<OffHeapWriteBuffer> computer, OakSerializer<V> serializer);
+    Result compute(Comparator<OffHeapWriteBuffer> computer);
 }
