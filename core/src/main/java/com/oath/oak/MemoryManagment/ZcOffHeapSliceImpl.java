@@ -1,11 +1,10 @@
-package com.oath.oak.MemoryManagment.ZC;
+package com.oath.oak.MemoryManagment;
 
-import com.oath.oak.MemoryManagment.NovaManager;
-import com.oath.oak.MemoryManagment.NovaValueUtilities;
-import com.oath.oak.MemoryManagment.OffHeapSliceImpl;
-import com.oath.oak.MemoryManagment.Result;
+import com.oath.oak.MemoryManagment.ZC.OffHeapReadBuffer;
+import com.oath.oak.MemoryManagment.ZC.OffHeapReadBufferImpl;
+import com.oath.oak.MemoryManagment.ZC.OffHeapWriteBuffer;
+import com.oath.oak.MemoryManagment.ZC.ZcOffHeapSlice;
 import com.oath.oak.OakComparator;
-import com.oath.oak.OakRValueBufferImpl;
 import com.oath.oak.OakSerializer;
 
 import java.nio.ByteBuffer;
@@ -17,7 +16,7 @@ import static com.oath.oak.MemoryManagment.Result.FALSE;
 import static com.oath.oak.MemoryManagment.Result.TRUE;
 
 public class ZcOffHeapSliceImpl extends OffHeapSliceImpl implements ZcOffHeapSlice {
-    public ZcOffHeapSliceImpl(long reference, long version, NovaValueUtilities utilities, NovaManager novaManager) {
+    ZcOffHeapSliceImpl(long reference, long version, NovaValueUtilities utilities, NovaManager novaManager) {
         super(reference, version, utilities, novaManager);
     }
 
@@ -31,7 +30,7 @@ public class ZcOffHeapSliceImpl extends OffHeapSliceImpl implements ZcOffHeapSli
         try {
             return new AbstractMap.SimpleImmutableEntry<>(TRUE, new OffHeapReadBufferImpl());
         } finally {
-            utilities.unlockRead(bb, version);
+            utilities.unlockRead(bb);
         }
     }
 

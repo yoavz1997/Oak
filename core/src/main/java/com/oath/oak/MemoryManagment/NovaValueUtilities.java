@@ -12,11 +12,11 @@ public interface NovaValueUtilities {
 
     ByteBuffer getActualBuffer(ByteBuffer s);
 
-    ByteBuffer getReadOnlyBuffer(ByteBuffer s);
+    ByteBuffer getActualReadOnlyBuffer(ByteBuffer s);
 
     Result lockRead(ByteBuffer s, long version);
 
-    Result unlockRead(ByteBuffer s, long version);
+    Result unlockRead(ByteBuffer s);
 
     Result lockWrite(ByteBuffer s, long version);
 

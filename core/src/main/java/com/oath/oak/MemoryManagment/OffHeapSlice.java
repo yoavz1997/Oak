@@ -2,12 +2,15 @@ package com.oath.oak.MemoryManagment;
 
 import com.oath.oak.MemoryManagment.ZC.ZcOffHeapSlice;
 import com.oath.oak.OakSerializer;
+import com.oath.oak.Slice;
 
 import java.util.Comparator;
 import java.util.Map;
 import java.util.function.Function;
 
 public interface OffHeapSlice {
+
+    Slice intoSlice();
 
     <V> Result put(V newValue, OakSerializer<V> serializer);
 

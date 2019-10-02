@@ -1,8 +1,8 @@
 package com.oath.oak.MemoryManagment;
 
 import com.oath.oak.MemoryManagment.ZC.ZcOffHeapSlice;
-import com.oath.oak.MemoryManagment.ZC.ZcOffHeapSliceImpl;
 import com.oath.oak.OakSerializer;
+import com.oath.oak.Slice;
 import com.oath.oak.UnsafeUtils;
 
 import java.nio.ByteBuffer;
@@ -14,28 +14,42 @@ import java.util.function.Function;
 import static com.oath.oak.MemoryManagment.Result.*;
 
 public class OffHeapSliceImpl implements OffHeapSlice {
-    protected long reference;
+    private long reference;
     protected long version;
-    protected final NovaValueUtilities utilities;
-    protected final NovaManager novaManager;
+    final NovaValueUtilities utilities;
+    private final NovaManager novaManager;
 
     private static final int LENGTH_MASK = 0x7fffff;
     private static final int BLOCK_ID_SHIFT = 23;
 
-    protected OffHeapSliceImpl(long reference, long version, NovaValueUtilities utilities, NovaManager novaManager) {
+    OffHeapSliceImpl(long reference, long version, NovaValueUtilities utilities, NovaManager novaManager) {
         this.reference = reference;
         this.version = version;
         this.utilities = utilities;
         this.novaManager = novaManager;
     }
 
-    protected ByteBuffer createMyByteBuffer() {
+    OffHeapSliceImpl(int blockId, int position, int length, long version, NovaValueUtilities utilities,
+                     NovaManager manager) {
+        this(createReference(blockId, position, length), version, utilities, manager);
+    }
+
+    private int getBlockId() {
+        return UnsafeUtils.longToInts(reference)[0] >>> BLOCK_ID_SHIFT;
+    }
+
+    ByteBuffer createMyByteBuffer() {
         int[] ints = UnsafeUtils.longToInts(reference);
         return novaManager.getByteBufferFromBlockID(ints[0] >>> BLOCK_ID_SHIFT, ints[1], ints[0] & LENGTH_MASK);
     }
 
-    protected long createReference(int blockID, int position, int length) {
+    private static long createReference(int blockID, int position, int length) {
         return UnsafeUtils.intsToLong((blockID << BLOCK_ID_SHIFT) + (length & LENGTH_MASK), position);
+    }
+
+    @Override
+    public Slice intoSlice() {
+        return new Slice(getBlockId(), createMyByteBuffer());
     }
 
     @Override
@@ -53,7 +67,7 @@ public class OffHeapSliceImpl implements OffHeapSlice {
         }
     }
 
-    protected <V> void writeValue(ByteBuffer bb, V newValue, OakSerializer<V> serializer) {
+    <V> void writeValue(ByteBuffer bb, V newValue, OakSerializer<V> serializer) {
         int newLength = serializer.calculateSize(newValue) + utilities.getHeaderSize();
         if (newLength > bb.remaining()) {
             throw new UnsupportedOperationException();
@@ -71,12 +85,12 @@ public class OffHeapSliceImpl implements OffHeapSlice {
         try {
             return new AbstractMap.SimpleImmutableEntry<>(TRUE, readValue(bb, serializer));
         } finally {
-            utilities.unlockRead(bb, version);
+            utilities.unlockRead(bb);
         }
     }
 
     private <V> V readValue(ByteBuffer bb, OakSerializer<V> serializer) {
-        return serializer.deserialize(utilities.getReadOnlyBuffer(bb));
+        return serializer.deserialize(utilities.getActualReadOnlyBuffer(bb));
     }
 
     @Override

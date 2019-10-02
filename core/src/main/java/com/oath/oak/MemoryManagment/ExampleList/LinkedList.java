@@ -37,7 +37,7 @@ public class LinkedList<K, V> {
             this.next = new AtomicMarkableReference<>(next, false);
         }
 
-        public boolean mark() {
+        boolean mark() {
             Node<K, V> oldNext = this.next.getReference();
             return this.next.compareAndSet(oldNext, oldNext, false, true);
         }

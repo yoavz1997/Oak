@@ -19,7 +19,7 @@ import static com.oath.oak.UnsafeUtils.intsToLong;
 import static java.lang.Long.reverseBytes;
 
 public class NovaValueOperationsImpl implements NovaValueOperations {
-    enum LockStates {
+    public enum LockStates {
         FREE(0), LOCKED(1), DELETED(2), MOVED(3);
 
         public final int value;

@@ -1,8 +1,9 @@
 package com.oath.oak.MemoryManagment;
 
+import java.io.Closeable;
 import java.nio.ByteBuffer;
 
-public interface NovaManager {
+public interface NovaManager extends Closeable {
 
     ByteBuffer getByteBufferFromBlockID(int blockID, int position, int length);
 
