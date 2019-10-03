@@ -88,4 +88,87 @@ public class OffHeapSliceTest {
         assertEquals(TRUE, resultStringEntry.getKey());
         assertEquals(string2, resultStringEntry.getValue());
     }
+
+    @Test
+    public void cannotExchangeDeletedSliceTest() {
+        int size = 32;
+        OffHeapSlice offHeapSlice = manager.allocateSlice(size);
+        assertEquals(TRUE, offHeapSlice.delete(null).getKey());
+        assertEquals(FALSE, offHeapSlice.exchange("hello", new StringSerializer()).getKey());
+    }
+
+    @Test
+    public void putThenGetTest() {
+        int size = 32;
+        OffHeapSlice offHeapSlice = manager.allocateSlice(size);
+        Slice slice = offHeapSlice.intoSlice();
+        assertEquals(size + utilities.getHeaderSize(), slice.getByteBuffer().remaining());
+        int numOfChars = (size - Integer.BYTES) / Character.BYTES;
+        Random random = new Random();
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < numOfChars; i++) {
+            builder.append((char) random.nextInt(Character.MAX_VALUE));
+        }
+        StringSerializer serializer = new StringSerializer();
+        String string = builder.toString();
+        assert serializer.calculateSize(string) == size;
+        assertEquals(TRUE, offHeapSlice.put(string, serializer));
+        Map.Entry<Result, String> resultStringEntry = offHeapSlice.get(serializer);
+        assertEquals(TRUE, resultStringEntry.getKey());
+        assertEquals(string, resultStringEntry.getValue());
+    }
+
+    @Test
+    public void cannotReadDeletedSliceTest() {
+        int size = 32;
+        OffHeapSlice offHeapSlice = manager.allocateSlice(size);
+        assertEquals(TRUE, offHeapSlice.delete(null).getKey());
+        assertEquals(FALSE, offHeapSlice.get(new StringSerializer()).getKey());
+    }
+
+    @Test
+    public void successfulCasTest() {
+        int size = 32;
+        OffHeapSlice offHeapSlice = manager.allocateSlice(size);
+        int numOfChars = (size - Integer.BYTES) / Character.BYTES;
+        Random random = new Random();
+        StringBuilder builder1 = new StringBuilder();
+        StringBuilder builder2 = new StringBuilder();
+        for (int i = 0; i < numOfChars; i++) {
+            builder1.append((char) random.nextInt(Character.MAX_VALUE));
+            builder2.append((char) random.nextInt(Character.MAX_VALUE));
+        }
+        StringSerializer serializer = new StringSerializer();
+        String string1 = builder1.toString();
+        String string2 = builder2.toString();
+        assertEquals(TRUE, offHeapSlice.put(string1, serializer));
+        assertEquals(TRUE, offHeapSlice.compareAndExchange(string1, string2, new StringSerializer(),
+                String::compareTo));
+        Map.Entry<Result, String> resultStringEntry = offHeapSlice.get(serializer);
+        assertEquals(TRUE, resultStringEntry.getKey());
+        assertEquals(string2, resultStringEntry.getValue());
+    }
+
+    @Test
+    public void failedCasTest(){
+        int size = 32;
+        OffHeapSlice offHeapSlice = manager.allocateSlice(size);
+        int numOfChars = (size - Integer.BYTES) / Character.BYTES;
+        Random random = new Random();
+        StringBuilder builder1 = new StringBuilder();
+        StringBuilder builder2 = new StringBuilder();
+        for (int i = 0; i < numOfChars; i++) {
+            builder1.append((char) random.nextInt(Character.MAX_VALUE));
+            builder2.append((char) random.nextInt(Character.MAX_VALUE));
+        }
+        StringSerializer serializer = new StringSerializer();
+        String string1 = builder1.toString();
+        String string2 = builder2.toString();
+        assertEquals(TRUE, offHeapSlice.put(string1, serializer));
+        assertEquals(FALSE, offHeapSlice.compareAndExchange(string2, string1, new StringSerializer(),
+                String::compareTo));
+        Map.Entry<Result, String> resultStringEntry = offHeapSlice.get(serializer);
+        assertEquals(TRUE, resultStringEntry.getKey());
+        assertEquals(string1, resultStringEntry.getValue());
+    }
 }

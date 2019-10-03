@@ -6,9 +6,13 @@ import com.oath.oak.MemoryManagment.Result;
 import com.oath.oak.OakComparator;
 import com.oath.oak.OakSerializer;
 
+import java.util.AbstractMap;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.function.Function;
 
@@ -102,6 +106,10 @@ public class LinkedList<K, V> {
         }
     }
 
+    public int size() {
+        return size.get();
+    }
+
     public V put(K key, V value) {
         while (true) {
             Window<K, V> window = find(key);
@@ -113,12 +121,20 @@ public class LinkedList<K, V> {
                 return resultVEntry.getValue();
             }
 
-            Node<K, V> newNode = new Node<>(key, keySerializer, value, valueSerializer, window.curr, manager);
-            if (!window.pred.next.compareAndSet(window.curr, newNode, false, false)) {
+            if (linkNewNode(key, value, window)) {
                 continue;
             }
             return null;
         }
+    }
+
+    private boolean linkNewNode(K key, V value, Window<K, V> window) {
+        Node<K, V> newNode = new Node<>(key, keySerializer, value, valueSerializer, window.curr, manager);
+        if (!window.pred.next.compareAndSet(window.curr, newNode, false, false)) {
+            return true;
+        }
+        size.incrementAndGet();
+        return false;
     }
 
     public V putIfAbsent(K key, V value) {
@@ -132,8 +148,7 @@ public class LinkedList<K, V> {
                 return resultVEntry.getValue();
             }
 
-            Node<K, V> newNode = new Node<>(key, keySerializer, value, valueSerializer, window.curr, manager);
-            if (!window.pred.next.compareAndSet(window.curr, newNode, false, false)) {
+            if (linkNewNode(key, value, window)) {
                 continue;
             }
             return null;
@@ -154,31 +169,41 @@ public class LinkedList<K, V> {
         }
     }
 
-    public V remove(K key) {
-        while (true) {
-            Window<K, V> window = find(key);
-            if (window.result) {
-                if (!window.curr.mark()) {
-                    continue;
+    public V remove(Object key) {
+        try {
+            while (true) {
+                Window<K, V> window = find((K) key);
+                if (window.result) {
+                    if (!window.curr.mark()) {
+                        continue;
+                    }
+                    size.decrementAndGet();
+                    Map.Entry<Result, V> resultVEntry = window.curr.getValue().delete(valueSerializer);
+                    assert resultVEntry.getKey() == TRUE;
+                    find((K) key);
+                    return resultVEntry.getValue();
                 }
-                Map.Entry<Result, V> resultVEntry = window.curr.getValue().delete(valueSerializer);
-                assert resultVEntry.getKey() == TRUE;
-                return resultVEntry.getValue();
+                return null;
             }
+        } catch (ClassCastException e) {
             return null;
         }
     }
 
-    public V get(K key) {
-        while (true) {
-            Window<K, V> window = find(key);
-            if (window.result) {
-                Map.Entry<Result, V> resultVEntry = window.curr.getValue().get(valueSerializer);
-                if (resultVEntry.getKey() != TRUE) {
-                    continue;
+    public V get(Object key) {
+        try {
+            while (true) {
+                Window<K, V> window = find((K) key);
+                if (window.result) {
+                    Map.Entry<Result, V> resultVEntry = window.curr.getValue().get(valueSerializer);
+                    if (resultVEntry.getKey() != TRUE) {
+                        continue;
+                    }
+                    return resultVEntry.getValue();
                 }
-                return resultVEntry.getValue();
+                return null;
             }
+        } catch (ClassCastException e) {
             return null;
         }
     }
@@ -191,10 +216,12 @@ public class LinkedList<K, V> {
         this.head = new Node<>(minKey, keySerializer, max, manager);
         this.keyComparator = keyComparator;
         this.manager = manager;
+        this.size = new AtomicInteger(0);
     }
 
     private NovaManager manager;
     private Node<K, V> head;
+    private AtomicInteger size;
     private OakSerializer<K> keySerializer;
     private OakSerializer<V> valueSerializer;
     private OakComparator<K> keyComparator;
