@@ -97,7 +97,7 @@ public class LinkedList<K, V> {
                     continue outer;
                 }
                 int comparison = keyComparator.compareKeys(key, resultKEntry.getValue());
-                if (comparison >= 0) {
+                if (comparison <= 0) {
                     return new Window<>(pred, curr, comparison == 0);
                 }
                 pred = curr;

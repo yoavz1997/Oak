@@ -117,7 +117,7 @@ public class NovaValueUtilitiesImpl implements NovaValueUtilities {
     @Override
     public Result unlockWrite(ByteBuffer s) {
         assert getInt(s, getLockLocation()) == LOCKED.value;
-        s.putInt(getLockLocation(), FREE.value);
+        putInt(s, getLockLocation(), FREE.value);
         return TRUE;
     }
 
