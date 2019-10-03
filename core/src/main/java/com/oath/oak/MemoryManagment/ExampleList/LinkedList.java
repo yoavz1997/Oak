@@ -82,15 +82,14 @@ public class LinkedList<K, V> {
             Node<K, V> curr = pred.getNext();
 
             while (true) {
-                AtomicMarkableReference<Node<K, V>> succ = curr.next;
                 boolean[] marking = new boolean[1];
-                Node<K, V> oldSucc = succ.get(marking);
-                if (marking[0]) {
-                    if (!pred.next.compareAndSet(curr, oldSucc, false, false)) {
+                Node<K, V> succ = curr.next.get(marking);
+                while (marking[0]) {
+                    if (!pred.next.compareAndSet(curr, succ, false, false)) {
                         continue outer;
                     }
-                    curr = oldSucc;
-                    continue;
+                    curr = succ;
+                    succ = curr.next.get(marking);
                 }
                 Map.Entry<Result, K> resultKEntry = curr.getKey().get(keySerializer);
                 if (resultKEntry.getKey() != TRUE) {
@@ -101,7 +100,7 @@ public class LinkedList<K, V> {
                     return new Window<>(pred, curr, comparison == 0);
                 }
                 pred = curr;
-                curr = oldSucc;
+                curr = succ;
             }
         }
     }
@@ -180,7 +179,7 @@ public class LinkedList<K, V> {
                     size.decrementAndGet();
                     Map.Entry<Result, V> resultVEntry = window.curr.getValue().delete(valueSerializer);
                     assert resultVEntry.getKey() == TRUE;
-                    find((K) key);
+                    window.pred.next.compareAndSet(window.curr, window.curr.getNext(), false, false);
                     return resultVEntry.getValue();
                 }
                 return null;
@@ -192,10 +191,25 @@ public class LinkedList<K, V> {
 
     public V get(Object key) {
         try {
+            outer:
             while (true) {
-                Window<K, V> window = find((K) key);
-                if (window.result) {
-                    Map.Entry<Result, V> resultVEntry = window.curr.getValue().get(valueSerializer);
+                boolean[] marked = {false};
+                Node<K, V> curr = head;
+                Map.Entry<Result, K> resultKEntry = curr.getKey().get(keySerializer);
+                if (resultKEntry.getKey() != TRUE) {
+                    continue;
+                }
+                int comparison = keyComparator.compareKeys((K) key, resultKEntry.getValue());
+                while (comparison > 0) {
+                    curr = curr.next.get(marked);
+                    resultKEntry = curr.getKey().get(keySerializer);
+                    if (resultKEntry.getKey() != TRUE) {
+                        continue outer;
+                    }
+                    comparison = keyComparator.compareKeys((K) key, resultKEntry.getValue());
+                }
+                if (comparison == 0 && !marked[0]) {
+                    Map.Entry<Result, V> resultVEntry = curr.getValue().get(valueSerializer);
                     if (resultVEntry.getKey() != TRUE) {
                         continue;
                     }

@@ -20,17 +20,17 @@ public interface OffHeapSlice {
      */
     Slice intoSlice();
 
-    <V> Result put(V newValue, OakSerializer<V> serializer);
+    <T> Result put(T newValue, OakSerializer<T> serializer);
 
-    <V> Map.Entry<Result, V> get(OakSerializer<V> serializer);
+    <T> Map.Entry<Result, T> get(OakSerializer<T> serializer);
 
-    <V> Map.Entry<Result, V> exchange(V newValue, OakSerializer<V> serializer);
+    <T> Map.Entry<Result, T> exchange(T newValue, OakSerializer<T> serializer);
 
-    <V> Result compareAndExchange(V expected, V newValue, OakSerializer<V> serializer, Comparator<V> comparator);
+    <T> Result compareAndExchange(T expected, T newValue, OakSerializer<T> serializer, Comparator<T> comparator);
 
-    <V> Map.Entry<Result, V> delete(OakSerializer<V> serializer);
+    <T> Map.Entry<Result, T> delete(OakSerializer<T> serializer);
 
-    <V> Result compute(Function<V, V> computer, OakSerializer<V> serializer);
+    <T> Result compute(Function<T, T> computer, OakSerializer<T> serializer);
 
     ZcOffHeapSlice zc();
 }
