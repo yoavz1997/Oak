@@ -117,8 +117,8 @@ public class OakRReference implements OakRBuffer {
     // srcPosition = 0 if to start from the beginning
     @Override
     public void unsafeCopyBufferToIntArray(int srcPosition, int[] dstArray, int countInts) {
-        UnsafeUtils.unsafeCopyBufferToIntArray(getTemporaryPerThreadByteBuffer(), srcPosition + position + headerSize
-                , dstArray, countInts);
+        UnsafeUtils.unsafeCopyBufferToIntArray(getTemporaryPerThreadByteBuffer().slice(),
+                srcPosition + position + headerSize, dstArray, countInts);
 
     }
 

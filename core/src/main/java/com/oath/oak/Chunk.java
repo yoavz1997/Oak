@@ -662,7 +662,7 @@ public class Chunk<K, V> {
         Slice slice = memoryManager.allocateSlice(valueLength);
         version[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock to be free
-        slice.initHeader();
+        slice.initHeader(operator);
         // since this is a private environment we can only use slice, instead of duplicate and then slice
         valueSerializer.serialize(value, operator.getValueByteBufferNoHeaderPrivate(slice));
         // combines the blockID with the value's length (including the header)

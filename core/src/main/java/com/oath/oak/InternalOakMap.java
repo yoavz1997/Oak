@@ -717,10 +717,10 @@ class InternalOakMap<K, V> {
             if (lookUp == null) {
                 // There is no such key. If we did logical deletion and someone else did the physical deletion,
                 // then the old value is saved in v. Otherwise v is (correctly) null
-                return Result.withFlag(false);
+                return transformer == null ? Result.withFlag(logicallyDeleted) : Result.withValue(v);
             } else if (lookUp.valueSlice == null) {
                 if (c.finalizeDeletion(lookUp) != RETRY) {
-                    return Result.withFlag(false);
+                    return transformer == null ? Result.withFlag(logicallyDeleted) : Result.withValue(v);
                 }
                 continue;
             }
@@ -739,7 +739,7 @@ class InternalOakMap<K, V> {
                 if (removeResult.getKey() == FALSE) {
                     // we didn't succeed to remove the value: it didn't contain oldValue, or was already marked
                     // as deleted by someone else)
-                    return null;
+                    return Result.withFlag(false);
                 } else if (removeResult.getKey() == RETRY) {
                     continue;
                 }
@@ -1177,7 +1177,7 @@ class InternalOakMap<K, V> {
                             valueVersion));
                     // If we could not complete the linking or if the value is deleted, advance to the next value
                     if (valueVersion == INVALID_VERSION || operator.isValueDeleted(getValueSlice(valueReference),
-                            valueVersion) != TRUE) {
+                            valueVersion) != FALSE) {
                         advanceState();
                         return advance(true);
                     }
