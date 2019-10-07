@@ -6,7 +6,7 @@
 
 package com.oath.oak.NativeAllocator;
 
-import com.oath.oak.OakMemoryAllocator;
+import com.oath.oak.OakBlockMemoryAllocator;
 import com.oath.oak.OakOutOfMemoryException;
 import com.oath.oak.Slice;
 import com.oath.oak.ThreadIndexCalculator;
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class OakNativeMemoryAllocator implements OakMemoryAllocator {
+public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
 
     private static class FreeChuck {
         long id;
@@ -86,7 +86,7 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
         }
     }
 
-    @Override
+
     public ByteBuffer allocate(int size) {
         return allocateSlice(size).getByteBuffer();
     }
@@ -100,12 +100,16 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
         while (!freeList.isEmpty()) {
             myDummy.length = size;
             FreeChuck bestFit = freeList.higher(myDummy);
-            if (bestFit == null) break;
-            if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size))
+            if (bestFit == null) {
+                break;
+            }
+            if (bestFit.slice.getByteBuffer().remaining() > (RECLAIM_FACTOR * size)) {
                 break;     // all remaining buffers are too big
+            }
             if (freeList.remove(bestFit)) {
-                if (stats != null)
+                if (stats != null) {
                     stats.reclaim(size);
+                }
                 return bestFit.slice;
             }
         }
@@ -145,16 +149,21 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     // Thread safe.
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this
     // Allocator!
-    @Override
+
+    @Deprecated
     public void free(ByteBuffer bb) {
         allocated.addAndGet(-(bb.remaining()));
-        if (stats != null) stats.release(bb);
+        if (stats != null) {
+            stats.release(bb);
+        }
         freeList.add(new FreeChuck(freeCounter.getAndIncrement(), bb.remaining(), new Slice(INVALID_BLOCK_ID, bb)));
     }
 
     public void freeSlice(Slice slice) {
         allocated.addAndGet(-(slice.getByteBuffer().remaining()));
-        if (stats != null) stats.release(slice.getByteBuffer());
+        if (stats != null) {
+            stats.release(slice.getByteBuffer());
+        }
         freeList.add(new FreeChuck(freeCounter.getAndIncrement(), slice.getByteBuffer().remaining(), slice));
     }
 
@@ -162,7 +171,9 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
     // Not thread safe, should be a single thread call. (?)
     @Override
     public void close() {
-        if (!closed.compareAndSet(false, true)) return;
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
         for (int i = 1; i <= numberOfBlocks(); i++) {
             blocksProvider.returnBlock(blocksArray[i]);
         }
@@ -176,13 +187,15 @@ public class OakNativeMemoryAllocator implements OakMemoryAllocator {
         return allocated.get();
     }
 
-  @Override public boolean isClosed() {
-    return closed.get();
-  }
 
-  // When some buffer need to be read from a random block
+    @Override public boolean isClosed() {
+    return closed.get();
+    }
+
+    // When some buffer need to be read from a random block
+    @Override
     public ByteBuffer readByteBufferFromBlockID(
-            Integer blockID, int bufferPosition, int bufferLength) {
+            int blockID, int bufferPosition, int bufferLength) {
         Block b = blocksArray[blockID];
         return b.getReadOnlyBufferForThread(bufferPosition, bufferLength);
     }
