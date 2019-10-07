@@ -652,7 +652,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
     }
 
     private Iterator<OakRBuffer> keysStreamIterator() {
-        return internalOakMap.keysStreamIterator(fromInclusive, toInclusive, isDescending);
+        return internalOakMap.keysStreamIterator(fromKey, fromInclusive, toKey, toInclusive, isDescending);
     }
 
 

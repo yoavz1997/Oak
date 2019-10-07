@@ -23,9 +23,7 @@ import java.util.function.Function;
 
 import static com.oath.oak.Chunk.*;
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
-import static com.oath.oak.NovaAllocator.NULL_VALUE;
 import static com.oath.oak.NovaValueUtils.Result.*;
-import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.longToInts;
 
 class InternalOakMap<K, V> {
@@ -369,7 +367,7 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
-                    if (c.getValueReference(prevEi) != NULL_VALUE) {
+                    if (c.getValueReference(prevEi) != DELETED_VALUE) {
                         continue;
                     }
                     ei = prevEi;
@@ -379,7 +377,7 @@ class InternalOakMap<K, V> {
             int[] version = new int[1];
             long newValueStats = c.writeValue(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueStats,
+            Chunk.OpData opData = new Chunk.OpData(ei, DELETED_VALUE, newValueStats,
                     oldVersion, version[0]);
 
             if (!c.publish()) {
@@ -442,7 +440,7 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
-                    if (c.getValueReference(prevEi) != NULL_VALUE) {
+                    if (c.getValueReference(prevEi) != DELETED_VALUE) {
                         continue;
                     }
                     ei = prevEi;
@@ -452,7 +450,7 @@ class InternalOakMap<K, V> {
             int[] version = new int[1];
             long newValueReference = c.writeValue(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueReference, oldVersion,
+            Chunk.OpData opData = new Chunk.OpData(ei, DELETED_VALUE, newValueReference, oldVersion,
                     version[0]);
 
             // publish put
@@ -510,7 +508,7 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(myEntryIndex, key);
                 if (prevEi != myEntryIndex) {
-                    if (c.getValueReference(prevEi) != NULL_VALUE) {
+                    if (c.getValueReference(prevEi) != DELETED_VALUE) {
                         return false;
                     } else {
                         myEntryIndex = prevEi;
@@ -521,7 +519,7 @@ class InternalOakMap<K, V> {
             int[] version = new int[1];
             long newValueStats = c.writeValue(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(myEntryIndex, NULL_VALUE, newValueStats,
+            Chunk.OpData opData = new Chunk.OpData(myEntryIndex, DELETED_VALUE, newValueStats,
                     oldVersion, version[0]);
 
             if (!c.publish()) {
@@ -584,12 +582,8 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
-                    if (c.getValueReference(prevEi) != NULL_VALUE) {
-                        AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
-                                transformer, lookUp.version);
-                        if (res.getKey() == TRUE) {
-                            return res.getValue();
-                        }
+                    long otherValueReference = c.getValueReference(prevEi);
+                    if (otherValueReference != DELETED_VALUE) {
                         continue;
                     } else {
                         // both threads compete for the put
@@ -600,7 +594,7 @@ class InternalOakMap<K, V> {
 
             int[] version = new int[1];
             long newValueReference = c.writeValue(value, version); // write value in place
-            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueReference,
+            Chunk.OpData opData = new Chunk.OpData(ei, DELETED_VALUE, newValueReference,
                     oldVersion, version[0]);
 
             // publish put
@@ -666,15 +660,8 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
-                    if (c.getValueReference(prevEi) != NULL_VALUE) {
-                        NovaValueUtils.Result res = operator.compute(lookUp.valueSlice, computer, lookUp.version);
-                        if (res == TRUE) {
-                            // compute was successful and the value wasn't found deleted; in case
-                            // this value was already found as deleted, continue to allocate a new value slice
-                            return false;
-                        } else if (res == RETRY) {
-                            continue;
-                        }
+                    if (c.getValueReference(prevEi) != DELETED_VALUE) {
+                        continue;
                     } else {
                         ei = prevEi;
                     }
@@ -684,7 +671,7 @@ class InternalOakMap<K, V> {
             int[] version = new int[1];
             long newValueReference = c.writeValue(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(ei, NULL_VALUE, newValueReference,
+            Chunk.OpData opData = new Chunk.OpData(ei, DELETED_VALUE, newValueReference,
                     oldVersion, version[0]);
 
             if (!c.publish()) {
@@ -748,7 +735,7 @@ class InternalOakMap<K, V> {
                 return transformer == null ? Result.withFlag(true) : Result.withValue(v);
             } else {
                 Map.Entry<NovaValueUtils.Result, V> removeResult = operator.remove(lookUp.valueSlice,
-                        memoryManager, oldValue, transformer);
+                        memoryManager, lookUp.version, oldValue, transformer);
                 if (removeResult.getKey() == FALSE) {
                     // we didn't succeed to remove the value: it didn't contain oldValue, or was already marked
                     // as deleted by someone else)
@@ -1181,14 +1168,16 @@ class InternalOakMap<K, V> {
             Map.Entry<Integer, Long> value = null;
             if (needsValue) {
                 do {
-                    valueVersion = state.getChunk().getVersion(state.getIndex());
+                    valueVersion = state.getChunk().getValueVersion(state.getIndex());
                     valueReference = state.getChunk().getValueReference(state.getIndex());
-                } while (valueVersion != state.getChunk().getVersion(state.getIndex()));
-                if (valueReference != NULL_VALUE) {
+                } while (valueVersion != state.getChunk().getValueVersion(state.getIndex()));
+                if (valueReference != DELETED_VALUE) {
                     // TODO: what if valueReference points to a deleted value?
                     valueVersion = state.getChunk().completeLinking(new LookUp(null, valueReference, state.getIndex(),
                             valueVersion));
-                    if (valueVersion == INVALID_VERSION) {
+                    // If we could not complete the linking or if the value is deleted, advance to the next value
+                    if (valueVersion == INVALID_VERSION || operator.isValueDeleted(getValueSlice(valueReference),
+                            valueVersion) != TRUE) {
                         advanceState();
                         return advance(true);
                     }
@@ -1503,8 +1492,8 @@ class InternalOakMap<K, V> {
 
         private OakRReference key = new OakRReference(memoryManager, 0);
 
-        KeyStreamIterator(boolean loInclusive, boolean hiInclusive, boolean isDescending) {
-            super(null, loInclusive, null, hiInclusive, isDescending);
+        KeyStreamIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive, boolean isDescending) {
+            super(lo, loInclusive, hi, hiInclusive, isDescending);
         }
 
         @Override
@@ -1557,9 +1546,9 @@ class InternalOakMap<K, V> {
         return new EntryStreamIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
-    Iterator<OakRBuffer> keysStreamIterator(boolean loInclusive, boolean hiInclusive,
+    Iterator<OakRBuffer> keysStreamIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,
                                             boolean isDescending) {
-        return new KeyStreamIterator(loInclusive, hiInclusive, isDescending);
+        return new KeyStreamIterator(lo, loInclusive, hi, hiInclusive, isDescending);
     }
 
     <T> Iterator<T> valuesTransformIterator(K lo, boolean loInclusive, K hi, boolean hiInclusive,

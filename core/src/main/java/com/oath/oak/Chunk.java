@@ -16,13 +16,10 @@ import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
-import static com.oath.oak.NovaAllocator.NULL_VALUE;
 import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 
-import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
-import static com.oath.oak.UnsafeUtils.intsToLong;
 import static com.oath.oak.UnsafeUtils.longToInts;
 
 public class Chunk<K, V> {
@@ -297,7 +294,7 @@ public class Chunk<K, V> {
         return readKey(maxEntry);
     }
 
-    int getVersion(int item) {
+    int getValueVersion(int item) {
         return getEntryFieldInt(item, OFFSET.VALUE_VERSION);
     }
 
@@ -435,7 +432,7 @@ public class Chunk<K, V> {
             return RETRY;
         }
         try {
-            if (!casEntriesArrayLong(lookUp.entryIndex, OFFSET.VALUE_REFERENCE, lookUp.valueReference, NULL_VALUE)) {
+            if (!casEntriesArrayLong(lookUp.entryIndex, OFFSET.VALUE_REFERENCE, lookUp.valueReference, DELETED_VALUE)) {
                 return FALSE;
             }
             if (!casEntriesArrayInt(lookUp.entryIndex, OFFSET.VALUE_VERSION, version, -version)) {
@@ -482,9 +479,9 @@ public class Chunk<K, V> {
                 int version;
                 // Atomic snapshot of version and value stats
                 do {
-                    version = getVersion(curr);
+                    version = getValueVersion(curr);
                     valueReference = getValueReference(curr);
-                } while (version != getVersion(curr));
+                } while (version != getValueVersion(curr));
                 Slice valueSlice = buildValueSlice(valueReference);
                 if (valueSlice == null) {
                     assert valueReference == 0;
@@ -681,7 +678,7 @@ public class Chunk<K, V> {
      * Updates a linked entry to point to a new value reference or otherwise removes such a link. For linkage this is
      * an insert linearization point.
      * All the relevant data can be found inside opData.
-     *
+     * <p>
      * if someone else got to it first (helping rebalancer or other operation), returns the old handle
      */
 
@@ -691,13 +688,13 @@ public class Chunk<K, V> {
             return FALSE;
         }
         casEntriesArrayInt(opData.entryIndex, OFFSET.VALUE_VERSION, opData.oldVersion, opData.newVersion);
-        if (opData.oldValueReference == NULL_VALUE) {
-            assert opData.newValueReference != NULL_VALUE;
+        if (opData.oldValueReference == DELETED_VALUE) {
+            assert opData.newValueReference != DELETED_VALUE;
             statistics.incrementAddedCount();
             externalSize.incrementAndGet();
         } else {
             assert false;
-            assert opData.newValueReference == NULL_VALUE;
+            assert opData.newValueReference == DELETED_VALUE;
             externalSize.decrementAndGet();
             statistics.decrementAddedCount();
         }
@@ -813,11 +810,17 @@ public class Chunk<K, V> {
         boolean isFirstInInterval = true;
 
         while (true) {
-            long currSrcValueReference = srcChunk.getValueReference(srcEntryIdx);
+            int currSrcValueVersion;
+            long currSrcValueReference;
+            do {
+                currSrcValueVersion = srcChunk.getValueVersion(srcEntryIdx);
+                currSrcValueReference = srcChunk.getValueReference(srcEntryIdx);
+            } while (currSrcValueVersion != srcChunk.getValueVersion(srcEntryIdx));
             currSrcValueBlock =
                     UnsafeUtils.longToInts(currSrcValueReference)[BLOCK_ID_LENGTH_ARRAY_INDEX] >>> VALUE_BLOCK_SHIFT;
+            // TODO: think if it should be == TRUE or != FALSE
             boolean isValueDeleted = (currSrcValueBlock == INVALID_BLOCK_ID) ||
-                    operator.isValueDeleted(buildValueSlice(currSrcValueReference));
+                    operator.isValueDeleted(buildValueSlice(currSrcValueReference), currSrcValueVersion) != FALSE;
             int entriesToCopy = entryIndexEnd - entryIndexStart + 1;
 
             // try to find a continuous interval to copy

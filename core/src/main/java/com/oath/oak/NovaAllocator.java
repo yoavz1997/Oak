@@ -10,7 +10,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NovaAllocator implements Closeable {
     static final int RELEASE_LIST_LIMIT = 1024;
     static final int NOVA_HEADER_SIZE = 4;
-    static final long NULL_VALUE = 0;
     static final int INVALID_VERSION = 0;
     private ThreadIndexCalculator threadIndexCalculator;
     private List<List<Slice>> releaseLists;
