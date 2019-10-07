@@ -8,6 +8,7 @@ import java.util.AbstractMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import static com.oath.oak.Chunk.DELETED_VALUE;
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
 import static com.oath.oak.NovaAllocator.NOVA_HEADER_SIZE;
@@ -110,14 +111,46 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     @Override
-    public Result remove(Slice s, NovaAllocator memoryManager, int version) {
-        Result result = deleteValue(s, version);
-        if (result != TRUE) {
-            return result;
+    public <V> AbstractMap.SimpleEntry<Result, V> remove(Slice s, NovaAllocator memoryManager, int version, V oldValue,
+                                                         Function<ByteBuffer, V> transformer) {
+        // No need to check the old value
+        if (oldValue == null) {
+            // try to delete
+            Result result = deleteValue(s, version);
+            if (result != TRUE) {
+                return new AbstractMap.SimpleEntry<>(result, null);
+            }
+            // read the old value (the slice is not reclaimed yet)
+            V v = transformer != null ? transformer.apply(getValueByteBufferNoHeader(s).asReadOnlyBuffer()) : null;
+            memoryManager.releaseSlice(s);
+            return new AbstractMap.SimpleEntry<>(TRUE, v);
+        } else {
+            // We first have to read the oldValue and only then decide whether it should be deleted.
+            Result result = lockWrite(s, version);
+            if (result != TRUE) {
+                return new AbstractMap.SimpleEntry<>(result, null);
+            }
+            V v = transformer.apply(getValueByteBufferNoHeader(s).asReadOnlyBuffer());
+            if (!oldValue.equals(v)) {
+                unlockWrite(s);
+                return new AbstractMap.SimpleEntry<>(FALSE, null);
+            }
+            // value is now deleted
+            putInt(s, getLockLocation(), DELETED.value);
+            memoryManager.releaseSlice(s);
+            return new AbstractMap.SimpleEntry<>(TRUE, v);
         }
-        memoryManager.releaseSlice(s);
-        return TRUE;
     }
+
+//    @Override
+//    public Result remove(Slice s, NovaAllocator memoryManager, int version) {
+//        Result result = deleteValue(s, version);
+//        if (result != TRUE) {
+//            return result;
+//        }
+//        memoryManager.releaseSlice(s);
+//        return TRUE;
+//    }
 
     @Override
     public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value,

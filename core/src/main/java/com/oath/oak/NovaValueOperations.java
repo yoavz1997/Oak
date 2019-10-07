@@ -11,13 +11,18 @@ public interface NovaValueOperations extends NovaValueUtils {
 
     <T> AbstractMap.SimpleEntry<Result, T> transform(Slice s, Function<ByteBuffer, T> transformer, int version);
 
-    <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer, NovaAllocator memoryManager);
+    <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer,
+                      NovaAllocator memoryManager);
 
     Result compute(Slice s, Consumer<OakWBuffer> computer, int version);
 
-    Result remove(Slice s, NovaAllocator memoryManager, int version);
+    <V> AbstractMap.SimpleEntry<Result, V> remove(Slice s, NovaAllocator memoryManager, int version, V oldValue,
+                                                  Function<ByteBuffer, V> transformer);
 
-    <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, NovaAllocator memoryManager);
+    <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value,
+                                                       Function<ByteBuffer, V> valueDeserializeTransformer,
+                                                       OakSerializer<V> serializer, NovaAllocator memoryManager);
 
-    <K,V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value, Function<ByteBuffer, V> valueDeserializeTransformer, OakSerializer<V> serializer, NovaAllocator memoryManager);
+    <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value, Function<ByteBuffer,
+            V> valueDeserializeTransformer, OakSerializer<V> serializer, NovaAllocator memoryManager);
 }

@@ -16,7 +16,6 @@ import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
-import static com.oath.oak.NovaAllocator.NULL_VALUE;
 import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
@@ -297,7 +296,7 @@ public class Chunk<K, V> {
         return readKey(maxEntry);
     }
 
-    int getVersion(int item) {
+    int getValueVersion(int item) {
         return getEntryFieldInt(item, OFFSET.VALUE_VERSION);
     }
 
@@ -403,9 +402,9 @@ public class Chunk<K, V> {
         long valueReference;
         int v;
         do {
-            v = getVersion(entryIndex);
+            v = getValueVersion(entryIndex);
             valueReference = getValueReference(entryIndex);
-        } while (v != getVersion(entryIndex));
+        } while (v != getValueVersion(entryIndex));
         version[0] = v;
         return valueReference;
     }
@@ -443,7 +442,7 @@ public class Chunk<K, V> {
             return RETRY;
         }
         try {
-            if (!casEntriesArrayLong(lookUp.entryIndex, OFFSET.VALUE_REFERENCE, lookUp.valueReference, NULL_VALUE)) {
+            if (!casEntriesArrayLong(lookUp.entryIndex, OFFSET.VALUE_REFERENCE, lookUp.valueReference, INVALID_VALUE)) {
                 return FALSE;
             }
             if (!casEntriesArrayInt(lookUp.entryIndex, OFFSET.VALUE_VERSION, version, -version)) {
@@ -848,6 +847,7 @@ public class Chunk<K, V> {
         while (true) {
             int[] currSrcValueVersion = new int[1];
             long currSrcValueReference = srcChunk.getValueReferenceAndVersion(srcEntryIdx, currSrcValueVersion);
+            // TODO: think if it should be == TRUE or != FALSE
             boolean isValueDeleted = (currSrcValueReference == INVALID_VALUE) ||
                     operator.isValueDeleted(buildValueSlice(currSrcValueReference), currSrcValueVersion[0]) != FALSE;
             int entriesToCopy = entryIndexEnd - entryIndexStart + 1;
