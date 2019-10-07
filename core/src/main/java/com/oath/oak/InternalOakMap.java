@@ -326,77 +326,6 @@ class InternalOakMap<K, V> {
 
     /*-------------- OakMap Methods --------------*/
 
-    void zcPut(K key, V value) {
-        if (key == null || value == null) {
-            throw new NullPointerException();
-        }
-        while (true) {
-            Chunk<K, V> c = findChunk(key); // find chunk matching key
-            Chunk.LookUp lookUp = c.lookUp(key);
-
-            if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateVersionAfterLinking(c, lookUp)) {
-                    continue;
-                }
-                if (operator.put(c, lookUp, value, valueSerializer, memoryManager) == TRUE) {
-                    return;
-                }
-                continue;
-            }
-
-            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
-                continue;
-            }
-            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
-
-            // Now the entry's version is invalid
-
-            int ei = -1;
-            if (lookUp != null) {
-                ei = lookUp.entryIndex;
-                assert ei > 0;
-            }
-
-            // Lookup is not valid anymore, only its entry index
-
-            if (ei == -1) {
-                ei = c.allocateEntryAndKey(key);
-                if (ei == -1) {
-                    rebalance(c);
-                    continue;
-                }
-                int prevEi = c.linkEntry(ei, key);
-                if (prevEi != ei) {
-                    if (c.getValueReference(prevEi) != INVALID_VALUE) {
-                        continue;
-                    }
-                    ei = prevEi;
-                }
-            }
-
-            int[] version = new int[1];
-            long newValueStats = c.writeValue(value, version); // write value in place
-
-            Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueStats,
-                    oldVersion, version[0]);
-
-            if (!c.publish()) {
-                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-                rebalance(c);
-                continue;
-            }
-
-            if (c.linkValue(opData) != TRUE) {
-                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
-                c.unpublish();
-            } else {
-                c.unpublish();
-                checkRebalance(c);
-                return;
-            }
-        }
-    }
-
     V put(K key, V value, Function<ByteBuffer, V> transformer) {
         if (key == null || value == null) {
             throw new NullPointerException();
@@ -451,7 +380,6 @@ class InternalOakMap<K, V> {
             Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueReference, oldVersion,
                     version[0]);
 
-            // publish put
             if (!c.publish()) {
                 c.releaseValue(newValueReference);
                 rebalance(c);
@@ -459,7 +387,7 @@ class InternalOakMap<K, V> {
             }
 
             if (c.linkValue(opData) != TRUE) {
-                memoryManager.releaseSlice(c.buildValueSlice(newValueReference));
+                c.releaseValue(newValueReference);
                 c.unpublish();
             } else {
                 c.unpublish();
@@ -492,42 +420,42 @@ class InternalOakMap<K, V> {
 
             // Now the entry's version is invalid
 
-            int myEntryIndex = -1;
+            int ei;
             if (lookUp != null) {
-                myEntryIndex = lookUp.entryIndex;
-                assert myEntryIndex > 0;
-            }
-
-            if (myEntryIndex == -1) {
-                myEntryIndex = c.allocateEntryAndKey(key);
-                if (myEntryIndex == -1) {
+                // There's an entry for this key, but it isn't linked to any value (in which case valueReference is
+                // DELETED_VALUE)
+                // or it's linked to a deleted value that is referenced by valueReference (a valid one)
+                ei = lookUp.entryIndex;
+                assert ei > 0;
+            } else {
+                ei = c.allocateEntryAndKey(key);
+                if (ei == -1) {
                     rebalance(c);
                     continue;
                 }
-                int prevEi = c.linkEntry(myEntryIndex, key);
-                if (prevEi != myEntryIndex) {
+                int prevEi = c.linkEntry(ei, key);
+                if (prevEi != ei) {
                     if (c.getValueReference(prevEi) != INVALID_VALUE) {
                         return false;
                     } else {
-                        myEntryIndex = prevEi;
+                        ei = prevEi;
                     }
                 }
             }
 
             int[] version = new int[1];
-            long newValueStats = c.writeValue(value, version); // write value in place
+            long newValueReference = c.writeValue(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(myEntryIndex, INVALID_VALUE, newValueStats,
-                    oldVersion, version[0]);
+            Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueReference, oldVersion, version[0]);
 
             if (!c.publish()) {
-                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.releaseValue(newValueReference);
                 rebalance(c);
                 continue;
             }
 
             if (c.linkValue(opData) != TRUE) {
-                memoryManager.releaseSlice(c.buildValueSlice(newValueStats));
+                c.releaseValue(newValueReference);
                 c.unpublish();
             } else {
                 c.unpublish();
@@ -602,7 +530,6 @@ class InternalOakMap<K, V> {
             Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueReference,
                     oldVersion, version[0]);
 
-            // publish put
             if (!c.publish()) {
                 c.releaseValue(newValueReference);
                 rebalance(c);

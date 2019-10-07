@@ -513,7 +513,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
                 throw new NullPointerException();
             }
 
-            m.internalOakMap.zcPut(key, value);
+            m.internalOakMap.put(key, value, null);
         }
 
         public OakRBuffer get(K key) {

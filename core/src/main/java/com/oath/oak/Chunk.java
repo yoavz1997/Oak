@@ -497,7 +497,7 @@ public class Chunk<K, V> {
             else if (cmp == 0) {
                 long valueReference;
                 int[] version = new int[1];
-                // Atomic snapshot of version and value stats
+                // Atomic snapshot of version and value reference
                 valueReference = getValueReferenceAndVersion(curr, version);
                 Slice valueSlice = buildValueSlice(valueReference);
                 if (valueSlice == null) {
