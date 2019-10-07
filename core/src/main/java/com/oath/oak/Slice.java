@@ -34,8 +34,8 @@ public class Slice {
         return blockID;
     }
 
-    void initHeader(){
-        buffer.putInt(buffer.position(), FREE.value);
+    void initHeader(NovaValueUtils operator) {
+        buffer.putInt(buffer.position() + operator.getLockLocation(), FREE.value);
     }
 
     public Slice readOnly() {

@@ -20,7 +20,6 @@ import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 
-import static com.oath.oak.UnsafeUtils.intsToLong;
 import static com.oath.oak.UnsafeUtils.longToInts;
 
 public class Chunk<K, V> {
@@ -697,7 +696,7 @@ public class Chunk<K, V> {
         Slice slice = memoryManager.allocateSlice(valueLength);
         version[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock to be free
-        slice.initHeader();
+        slice.initHeader(operator);
         // since this is a private environment, we can only use ByteBuffer::slice, instead of ByteBuffer::duplicate
         // and then ByteBuffer::slice
         valueSerializer.serialize(value, operator.getValueByteBufferNoHeaderPrivate(slice));
