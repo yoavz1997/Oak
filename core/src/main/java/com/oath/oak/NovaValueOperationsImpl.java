@@ -161,7 +161,10 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         if (result != TRUE) {
             return new AbstractMap.SimpleEntry<>(result, null);
         }
-        V oldValue = serializer.deserialize(getValueByteBufferNoHeader(lookUp.valueSlice));
+        V oldValue = null;
+        if (valueDeserializeTransformer != null) {
+            oldValue = valueDeserializeTransformer.apply(getValueByteBufferNoHeader(lookUp.valueSlice));
+        }
         Slice s = innerPut(chunk, lookUp, value, serializer, memoryManager);
         unlockWrite(s);
         return new AbstractMap.SimpleEntry<>(TRUE, oldValue);
@@ -175,7 +178,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         if (result != TRUE) {
             return result;
         }
-        V oldValue = serializer.deserialize(getValueByteBufferNoHeader(lookUp.valueSlice));
+        V oldValue = valueDeserializeTransformer.apply(getValueByteBufferNoHeader(lookUp.valueSlice));
         if (!oldValue.equals(expected)) {
             unlockWrite(lookUp.valueSlice);
             return FALSE;

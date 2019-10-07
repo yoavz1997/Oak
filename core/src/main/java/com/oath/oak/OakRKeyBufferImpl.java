@@ -16,25 +16,25 @@ import static com.oath.oak.UnsafeUtils.longToInts;
 
 public class OakRKeyBufferImpl implements OakRBuffer {
 
-    private final long keyStats;
+    private final long keyReference;
     private final NovaAllocator memoryManager;
     private final int initialPosition;
 
-    OakRKeyBufferImpl(long keyStats, NovaAllocator memoryManager) {
-        this.keyStats = keyStats;
+    OakRKeyBufferImpl(long keyReference, NovaAllocator memoryManager) {
+        this.keyReference = keyReference;
         this.memoryManager = memoryManager;
-        this.initialPosition = longToInts(keyStats)[1];
+        this.initialPosition = longToInts(keyReference)[1];
     }
 
     private ByteBuffer getKeyBuffer() {
-        int[] keyArray = longToInts(keyStats);
+        int[] keyArray = longToInts(keyReference);
         return memoryManager.getByteBufferFromBlockID(keyArray[0] >>> KEY_BLOCK_SHIFT, keyArray[1],
                 keyArray[0] & KEY_LENGTH_MASK);
     }
 
     @Override
     public int capacity() {
-        return longToInts(keyStats)[0] & KEY_LENGTH_MASK;
+        return longToInts(keyReference)[0] & KEY_LENGTH_MASK;
     }
 
     @Override
