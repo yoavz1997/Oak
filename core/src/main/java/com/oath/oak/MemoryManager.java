@@ -11,10 +11,10 @@ import java.nio.ByteBuffer;
 
 
 public class MemoryManager {
-    private final OakMemoryAllocator keysMemoryAllocator;
-    private final OakMemoryAllocator valuesMemoryAllocator;
+    private final OakBlockMemoryAllocator keysMemoryAllocator;
+    private final OakBlockMemoryAllocator valuesMemoryAllocator;
 
-    public MemoryManager(OakMemoryAllocator memoryAllocator) {
+    public MemoryManager(OakBlockMemoryAllocator memoryAllocator) {
         assert memoryAllocator != null;
 
         this.valuesMemoryAllocator = memoryAllocator;
