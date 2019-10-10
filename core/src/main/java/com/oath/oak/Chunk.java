@@ -141,8 +141,8 @@ public class Chunk<K, V> {
      * @param creator the chunk that is responsible for this chunk creation
      */
     Chunk(ByteBuffer minKey, Chunk<K, V> creator, OakComparator<K> comparator, NovaAllocator memoryManager,
-          int maxItems, AtomicInteger externalSize,
-          OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer, NovaValueOperations operator) {
+          int maxItems, AtomicInteger externalSize, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
+          NovaValueOperations operator) {
         this.memoryManager = memoryManager;
         this.maxItems = maxItems;
         this.entries = new int[maxItems * FIELDS + FIRST_ITEM];

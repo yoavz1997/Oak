@@ -598,8 +598,7 @@ class InternalOakMap<K, V> {
             int[] version = new int[1];
             long newValueReference = c.writeValue(value, version); // write value in place
 
-            Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueReference,
-                    oldVersion, version[0]);
+            Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueReference, oldVersion, version[0]);
 
             if (!c.publish()) {
                 c.releaseValue(newValueReference);
