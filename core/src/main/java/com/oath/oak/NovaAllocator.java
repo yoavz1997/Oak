@@ -71,7 +71,4 @@ public class NovaAllocator implements Closeable {
         return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength);
     }
 
-    boolean verifyVersion(Slice s, int version) {
-        return s.getByteBuffer().getInt(s.getByteBuffer().position()) == version;
-    }
 }

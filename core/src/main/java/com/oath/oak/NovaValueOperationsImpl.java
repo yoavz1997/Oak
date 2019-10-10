@@ -8,13 +8,17 @@ import java.util.AbstractMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
-import static com.oath.oak.Chunk.DELETED_VALUE;
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
-import static com.oath.oak.NovaAllocator.NOVA_HEADER_SIZE;
 import static com.oath.oak.NovaAllocator.INVALID_VERSION;
-import static com.oath.oak.NovaValueOperationsImpl.LockStates.*;
-import static com.oath.oak.NovaValueUtils.Result.*;
+import static com.oath.oak.NovaAllocator.NOVA_HEADER_SIZE;
+import static com.oath.oak.NovaValueOperationsImpl.LockStates.DELETED;
+import static com.oath.oak.NovaValueOperationsImpl.LockStates.FREE;
+import static com.oath.oak.NovaValueOperationsImpl.LockStates.LOCKED;
+import static com.oath.oak.NovaValueOperationsImpl.LockStates.MOVED;
+import static com.oath.oak.NovaValueUtils.Result.FALSE;
+import static com.oath.oak.NovaValueUtils.Result.RETRY;
+import static com.oath.oak.NovaValueUtils.Result.TRUE;
 import static com.oath.oak.UnsafeUtils.intsToLong;
 import static java.lang.Long.reverseBytes;
 
@@ -142,16 +146,6 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         }
     }
 
-//    @Override
-//    public Result remove(Slice s, NovaAllocator memoryManager, int version) {
-//        Result result = deleteValue(s, version);
-//        if (result != TRUE) {
-//            return result;
-//        }
-//        memoryManager.releaseSlice(s);
-//        return TRUE;
-//    }
-
     @Override
     public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value,
                                                               Function<ByteBuffer, V> valueDeserializeTransformer,
@@ -257,9 +251,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
 
     @Override
     public Result lockWrite(Slice s, int version) {
-        if (version <= INVALID_VERSION) {
-            assert false;
-        }
+        assert version > INVALID_VERSION;
         do {
             int oldVersion = getInt(s, 0);
             if (oldVersion != version) {

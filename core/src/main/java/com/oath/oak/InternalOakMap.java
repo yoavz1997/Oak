@@ -158,13 +158,11 @@ class InternalOakMap<K, V> {
 
     /**
      * @param c - Chunk to rebalance
-     * @return - returns {@code true} if this thread managed to CAS to newChunk list of rebalance (the result of
-     * {@code rebalancer.createNewChunks}). {@code false} otherwise.
      */
-    private boolean rebalance(Chunk<K, V> c) {
+    private void rebalance(Chunk<K, V> c) {
 
         if (c == null) {
-            return false;
+            return;
         }
         Rebalancer<K, V> rebalancer = new Rebalancer<>(c, true, memoryManager, keySerializer,
                 valueSerializer, operator);
@@ -190,7 +188,6 @@ class InternalOakMap<K, V> {
 
         engaged.forEach(Chunk::release);
 
-        return result;
     }
 
     private void checkRebalance(Chunk<K, V> c) {
@@ -1078,7 +1075,8 @@ class InternalOakMap<K, V> {
          * Advances next to higher entry.
          * Return previous index
          *
-         * @return
+         * @return The first long is the key's reference, the integer is the value's version and the second long is
+         * the value's reference. If {@code needsValue == false}, then the value of the map entry is {@code null}.
          */
         Map.Entry<Long, Map.Entry<Integer, Long>> advance(boolean needsValue) {
 
@@ -1099,9 +1097,8 @@ class InternalOakMap<K, V> {
             if (needsValue) {
                 valueReference = state.getChunk().getValueReferenceAndVersion(state.getIndex(), valueVersion);
                 if (valueReference != INVALID_VALUE) {
-                    // TODO: what if valueReference points to a deleted value?
-                    valueVersion[0] = state.getChunk().completeLinking(new LookUp(null, valueReference, state.getIndex(),
-                            valueVersion[0]));
+                    valueVersion[0] = state.getChunk().completeLinking(new LookUp(null, valueReference,
+                            state.getIndex(), valueVersion[0]));
                     // If we could not complete the linking or if the value is deleted, advance to the next value
                     if (valueVersion[0] == INVALID_VERSION || operator.isValueDeleted(getValueSlice(valueReference),
                             valueVersion[0]) != FALSE) {

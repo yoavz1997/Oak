@@ -56,10 +56,15 @@ public class Chunk<K, V> {
          * KEY_BLOCK
          *
          * KEY_LENGTH
+         *
+         * VALUE_VERSION - as the name suggests this is the version of the value reference by VALUE_REFERENCE.
+         * It initially equals to INVALID_VERSION.
+         * If an entry with version v is removed, then this field is CASed to be -v after the value is marked
+         * off-heap and the value reference becomes INVALID_VALUE.
          */
         NEXT(0), VALUE_REFERENCE(1), VALUE_POSITION(1), VALUE_BLOCK_AND_LENGTH(2), VALUE_BLOCK(2),
         VALUE_LENGTH(2), KEY_REFERENCE(3), KEY_POSITION(3), KEY_BLOCK_AND_LENGTH(4), KEY_BLOCK(4),
-        KEY_LENGTH(4), VALUE_VERSION(5);;
+        KEY_LENGTH(4), VALUE_VERSION(5);
 
         public final int value;
 
@@ -78,8 +83,8 @@ public class Chunk<K, V> {
     static final int NONE = 0;    // an entry with NONE as its next pointer, points to a null entry
     static final int INVALID_ENTRY_INDEX = -1;
     static final long INVALID_VALUE = 0;
-    static final int BLOCK_ID_LENGTH_ARRAY_INDEX = 0;
-    static final int POSITION_ARRAY_INDEX = 1;
+    private static final int BLOCK_ID_LENGTH_ARRAY_INDEX = 0;
+    private static final int POSITION_ARRAY_INDEX = 1;
     // location of the first (head) node - just a next pointer
     private static final int HEAD_NODE = 0;
     // index of first item in array, after head (not necessarily first in list!)
@@ -295,7 +300,7 @@ public class Chunk<K, V> {
         return readKey(maxEntry);
     }
 
-    int getValueVersion(int item) {
+    private int getValueVersion(int item) {
         return getEntryFieldInt(item, OFFSET.VALUE_VERSION);
     }
 
@@ -846,7 +851,6 @@ public class Chunk<K, V> {
         while (true) {
             int[] currSrcValueVersion = new int[1];
             long currSrcValueReference = srcChunk.getValueReferenceAndVersion(srcEntryIdx, currSrcValueVersion);
-            // TODO: think if it should be == TRUE or != FALSE
             boolean isValueDeleted = (currSrcValueReference == INVALID_VALUE) ||
                     operator.isValueDeleted(buildValueSlice(currSrcValueReference), currSrcValueVersion[0]) != FALSE;
             int entriesToCopy = entryIndexEnd - entryIndexStart + 1;
