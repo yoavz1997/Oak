@@ -267,7 +267,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
         if (value == null) {
             throw new NullPointerException();
         }
-        return internalOakMap.putIfAbsent(key, value, valueDeserializeTransformer);
+        return internalOakMap.putIfAbsent(key, value, valueDeserializeTransformer).value;
     }
 
 
@@ -534,7 +534,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
                 throw new NullPointerException();
             }
 
-            return m.internalOakMap.zcPutIfAbsent(key, value);
+            return m.internalOakMap.putIfAbsent(key, value, null).flag;
         }
 
         public boolean computeIfPresent(K key, Consumer<OakWBuffer> computer) {

@@ -321,6 +321,14 @@ class InternalOakMap<K, V> {
         return false;
     }
 
+    private boolean updateVersionAfterLinking(Chunk<K, V> c, LookUp lookUp) {
+        if (c.completeLinking(lookUp) == INVALID_VERSION) {
+            rebalance(c);
+            return true;
+        }
+        return false;
+    }
+
     /*-------------- OakMap Methods --------------*/
 
     V put(K key, V value, Function<ByteBuffer, V> transformer) {
@@ -394,7 +402,7 @@ class InternalOakMap<K, V> {
         }
     }
 
-    boolean zcPutIfAbsent(K key, V value) {
+    Result<V> putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
         if (key == null || value == null) {
             throw new NullPointerException();
         }
@@ -407,9 +415,19 @@ class InternalOakMap<K, V> {
                 if (updateVersionAfterLinking(c, lookUp)) {
                     continue;
                 }
-                return false;
+                if (transformer == null) {
+                    return Result.withFlag(false);
+                }
+                AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
+                        transformer, lookUp.version);
+                if (res.getKey() == TRUE) {
+                    return Result.withValue(res.getValue());
+                }
+                continue;
             }
 
+            // if chunk is frozen or infant, we can't add to it
+            // we need to help rebalancer first, then proceed
             if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
                 continue;
             }
@@ -426,15 +444,27 @@ class InternalOakMap<K, V> {
                 assert ei > 0;
             } else {
                 ei = c.allocateEntryAndKey(key);
-                if (ei == -1) {
+                if (ei == INVALID_ENTRY_INDEX) {
                     rebalance(c);
                     continue;
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
-                    if (c.getValueReference(prevEi) != INVALID_VALUE) {
-                        return false;
+                    // some other thread linked its entry with the same key.
+                    int[] otherVersion = new int[1];
+                    Slice otherSlice = c.buildValueSlice(c.getValueReferenceAndVersion(prevEi, otherVersion));
+                    if (otherSlice != null) {
+                        if (transformer == null) {
+                            return Result.withFlag(false);
+                        }
+                        AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(otherSlice,
+                                transformer, otherVersion[0]);
+                        if (res.getKey() == TRUE) {
+                            return Result.withValue(res.getValue());
+                        }
+                        continue;
                     } else {
+                        // both threads compete for the put
                         ei = prevEi;
                     }
                 }
@@ -457,89 +487,7 @@ class InternalOakMap<K, V> {
             } else {
                 c.unpublish();
                 checkRebalance(c);
-                return true;
-            }
-        }
-    }
-
-    V putIfAbsent(K key, V value, Function<ByteBuffer, V> transformer) {
-        if (key == null || value == null) {
-            throw new NullPointerException();
-        }
-
-        while (true) {
-            Chunk<K, V> c = findChunk(key); // find chunk matching key
-            Chunk.LookUp lookUp = c.lookUp(key);
-            if (lookUp != null && lookUp.valueSlice != null) {
-                if (updateVersionAfterLinking(c, lookUp)) {
-                    continue;
-                }
-                AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(lookUp.valueSlice,
-                        transformer, lookUp.version);
-                if (res.getKey() == TRUE) {
-                    return res.getValue();
-                }
-                continue;
-            }
-
-            // if chunk is frozen or infant, we can't add to it
-            // we need to help rebalancer first, then proceed
-            if (inTheMiddleOfRebalance(c) || finalizeDeletion(c, lookUp)) {
-                continue;
-            }
-            int oldVersion = lookUp == null ? INVALID_VERSION : -Math.abs(lookUp.version);
-
-
-            int ei;
-            if (lookUp != null) {
-                // There's an entry for this key, but it isn't linked to any value (in which case valueReference is
-                // DELETED_VALUE)
-                // or it's linked to a deleted value that is referenced by valueReference (a valid one)
-                ei = lookUp.entryIndex;
-                assert ei > 0;
-            } else {
-                ei = c.allocateEntryAndKey(key);
-                if (ei == INVALID_ENTRY_INDEX) {
-                    rebalance(c);
-                    continue;
-                }
-                int prevEi = c.linkEntry(ei, key);
-                if (prevEi != ei) {
-                    // some other thread linked its entry with the same key.
-                    int[] otherVersion = new int[1];
-                    Slice otherSlice = c.buildValueSlice(c.getValueReferenceAndVersion(prevEi, otherVersion));
-                    if (otherSlice != null) {
-                        AbstractMap.SimpleEntry<NovaValueUtils.Result, V> res = operator.transform(otherSlice,
-                                transformer, otherVersion[0]);
-                        if (res.getKey() == TRUE) {
-                            return res.getValue();
-                        }
-                        continue;
-                    } else {
-                        // both threads compete for the put
-                        ei = prevEi;
-                    }
-                }
-            }
-
-            int[] version = new int[1];
-            long newValueReference = c.writeValue(value, version); // write value in place
-            Chunk.OpData opData = new Chunk.OpData(ei, INVALID_VALUE, newValueReference,
-                    oldVersion, version[0]);
-
-            if (!c.publish()) {
-                c.releaseValue(newValueReference);
-                rebalance(c);
-                continue;
-            }
-
-            if (c.linkValue(opData) != TRUE) {
-                c.releaseValue(newValueReference);
-                c.unpublish();
-            } else {
-                c.unpublish();
-                checkRebalance(c);
-                return null;
+                return transformer == null ? Result.withFlag(true) : Result.withValue(null);
             }
         }
     }
@@ -616,15 +564,6 @@ class InternalOakMap<K, V> {
             }
         }
     }
-
-    private boolean updateVersionAfterLinking(Chunk<K, V> c, LookUp lookUp) {
-        if (c.completeLinking(lookUp) == INVALID_VERSION) {
-            rebalance(c);
-            return true;
-        }
-        return false;
-    }
-
 
     Result<V> remove(K key, V oldValue, Function<ByteBuffer, V> transformer) {
         if (key == null) {
