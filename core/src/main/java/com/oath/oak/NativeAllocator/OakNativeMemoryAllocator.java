@@ -116,6 +116,7 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
                 if (stats != null) {
                     stats.reclaim(size);
                 }
+                System.out.println("Reusing!");
                 return bestFit.slice;
             }
         }
@@ -171,17 +172,12 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
     }
 
     @Override
-    public void freeSlice(Slice slice, boolean isKey) {
+    public void freeSlice(Slice slice) {
         allocated.addAndGet(-(slice.getByteBuffer().remaining()));
         if (stats != null) {
             stats.release(slice.getByteBuffer());
         }
         freeList.add(new FreeChuck(freeCounter.getAndIncrement(), slice.getByteBuffer().remaining(), slice));
-        if (isKey) {
-            keysAllocated.decrementAndGet();
-        } else {
-            valuesAllocated.decrementAndGet();
-        }
     }
 
     // Releases all memory allocated for this Oak (should be used as part of the Oak destruction)

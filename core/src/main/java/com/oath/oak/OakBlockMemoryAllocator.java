@@ -21,7 +21,7 @@ public interface OakBlockMemoryAllocator {
     // Releases ByteBuffer (makes it available for reuse) without other GC consideration.
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this
     // Allocator!
-    void freeSlice(Slice s, boolean isKey);
+    void freeSlice(Slice s);
 
     // Is invoked when entire OakMap is closed
     void close();

@@ -57,7 +57,7 @@ public class NovaManager implements Closeable {
         if (myReleaseList.size() >= RELEASE_LIST_LIMIT) {
             globalNovaNumber.incrementAndGet();
             for (Slice releasedSlice : myReleaseList) {
-                manager.freeSlice(releasedSlice, isKey);
+                manager.freeSlice(releasedSlice);
             }
             myReleaseList.clear();
         }

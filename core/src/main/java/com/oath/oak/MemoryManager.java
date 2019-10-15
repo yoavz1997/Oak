@@ -40,7 +40,7 @@ public class MemoryManager {
 
     public void releaseSlice(Slice slice) {
         // keys aren't going to be released until GC part is taken care for
-        ((OakNativeMemoryAllocator)keysMemoryAllocator).freeSlice(slice, true);
+        ((OakNativeMemoryAllocator)keysMemoryAllocator).freeSlice(slice);
     }
 
     // When some read only buffer needs to be read from a random block
