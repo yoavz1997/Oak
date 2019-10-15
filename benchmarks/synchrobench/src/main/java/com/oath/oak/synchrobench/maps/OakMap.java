@@ -40,10 +40,6 @@ public class OakMap<K extends MyBuffer, V extends MyBuffer> implements Compositi
         return ma;
     }
 
-    public NovaManager getMemoryManager() {
-        return oak.getMemoryManager();
-    }
-
     @Override
     public boolean getOak(K key) {
         if (Parameters.zeroCopy) {

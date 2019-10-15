@@ -213,8 +213,7 @@ public class Chunk<K, V> {
      **/
     private void writeKey(K key, int ei) {
         int keySize = keySerializer.calculateSize(key);
-        Slice s = memoryManager.allocateSlice(keySize);
-        memoryManager.keysAllocated.incrementAndGet();
+        Slice s = memoryManager.allocateSlice(keySize, true);
         // byteBuffer.slice() is set so it protects us from the overwrites of the serializer
         keySerializer.serialize(key, s.getByteBuffer().slice());
 
@@ -288,8 +287,7 @@ public class Chunk<K, V> {
         int length = keyArray[0] & KEY_LENGTH_MASK;
         Slice s = new Slice(blockID, keyPosition, length, memoryManager);
 
-        memoryManager.releaseSlice(s);
-        memoryManager.keysAllocated.decrementAndGet();
+        memoryManager.releaseSlice(s, true);
     }
 
     ByteBuffer readMinKey() {
@@ -469,8 +467,7 @@ public class Chunk<K, V> {
 
     // Use this function to release an unreachable value reference
     void releaseValue(long newValueReference) {
-        memoryManager.releaseSlice(buildValueSlice(newValueReference));
-        memoryManager.valuesAllocated.decrementAndGet();
+        memoryManager.releaseSlice(buildValueSlice(newValueReference), false);
     }
 
     /**
@@ -702,8 +699,7 @@ public class Chunk<K, V> {
     long writeValue(V value, int[] version) {
         // the length of the given value plus its header
         int valueLength = valueSerializer.calculateSize(value) + operator.getHeaderSize();
-        Slice slice = memoryManager.allocateSlice(valueLength);
-        memoryManager.valuesAllocated.incrementAndGet();
+        Slice slice = memoryManager.allocateSlice(valueLength, false);
         version[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock to be free
         slice.initHeader(operator);

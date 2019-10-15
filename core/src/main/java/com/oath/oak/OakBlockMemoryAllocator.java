@@ -16,12 +16,12 @@ import java.nio.ByteBuffer;
 public interface OakBlockMemoryAllocator {
 
     // Allocates ByteBuffer of the given size, thread safe.
-    Slice allocateSlice(int size);
+    Slice allocateSlice(int size, boolean isKey);
 
     // Releases ByteBuffer (makes it available for reuse) without other GC consideration.
     // IMPORTANT: it is assumed free will get ByteBuffers only initially allocated from this
     // Allocator!
-    void freeSlice(Slice s);
+    void freeSlice(Slice s, boolean isKey);
 
     // Is invoked when entire OakMap is closed
     void close();

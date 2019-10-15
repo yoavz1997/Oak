@@ -1,5 +1,6 @@
 package com.oath.oak.synchrobench.contention.benchmark;
 
+import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
 import com.oath.oak.synchrobench.contention.abstractions.CompositionalMap;
 import com.oath.oak.synchrobench.contention.abstractions.CompositionalOakMap;
 import com.oath.oak.synchrobench.contention.abstractions.MaintenanceAlg;
@@ -162,11 +163,11 @@ public class Test {
 
         System.out.println("\n" + message);
         System.out.println((float) (heapSize - heapFreeSize) / (1024 * 1024));
-        final OakMap oakMap = ((OakMap) oakBench);
-        System.out.println((float) (oakMap.getMemoryAllocator().allocated()) / (1024 * 1024));
-        System.out.println("Free List Length " + oakMap.getMemoryAllocator().getFreeListLength());
-        System.out.println("Keys " + oakMap.getMemoryManager().keysAllocated.get());
-        System.out.println("Values " + oakMap.getMemoryManager().valuesAllocated.get());
+        final OakNativeMemoryAllocator memoryAllocator = ((OakMap) oakBench).getMemoryAllocator();
+        System.out.println((float) (memoryAllocator.allocated()) / (1024 * 1024));
+        System.out.println("Free List Length " + memoryAllocator.getFreeListLength());
+        System.out.println("Keys " + memoryAllocator.keysAllocated.get());
+        System.out.println("Values " + memoryAllocator.valuesAllocated.get());
     }
 
     /**

@@ -21,7 +21,7 @@ public class NovaValueUtilsTest {
     @Before
     public void init() {
         novaManager = new NovaManager(new OakNativeMemoryAllocator(128));
-        s = novaManager.allocateSlice(16);
+        s = novaManager.allocateSlice(16, false);
         s.getByteBuffer().putInt(s.getByteBuffer().position(), 1);
     }
 

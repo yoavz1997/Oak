@@ -15,8 +15,6 @@ public class NovaManager implements Closeable {
     private List<List<Slice>> releaseLists;
     private AtomicInteger globalNovaNumber;
     private OakBlockMemoryAllocator manager;
-    public final AtomicInteger keysAllocated = new AtomicInteger(0);
-    public final AtomicInteger valuesAllocated = new AtomicInteger(0);
 
     NovaManager(OakBlockMemoryAllocator manager) {
         this.threadIndexCalculator = ThreadIndexCalculator.newInstance();
@@ -45,21 +43,21 @@ public class NovaManager implements Closeable {
         return manager.allocated();
     }
 
-    Slice allocateSlice(int size) {
-        Slice s = manager.allocateSlice(size);
+    Slice allocateSlice(int size, boolean isKey) {
+        Slice s = manager.allocateSlice(size, isKey);
         assert s.getByteBuffer().remaining() >= size;
         s.getByteBuffer().putInt(s.getByteBuffer().position(), getCurrentVersion());
         return s;
     }
 
-    void releaseSlice(Slice s) {
+    void releaseSlice(Slice s, boolean isKey) {
         int idx = threadIndexCalculator.getIndex();
         List<Slice> myReleaseList = this.releaseLists.get(idx);
         myReleaseList.add(s.duplicate());
         if (myReleaseList.size() >= RELEASE_LIST_LIMIT) {
             globalNovaNumber.incrementAndGet();
             for (Slice releasedSlice : myReleaseList) {
-                manager.freeSlice(releasedSlice);
+                manager.freeSlice(releasedSlice, isKey);
             }
             myReleaseList.clear();
         }

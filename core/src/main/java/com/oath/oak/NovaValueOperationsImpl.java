@@ -92,8 +92,8 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     private <K, V> Slice moveValue(Chunk<K, V> chunk, Chunk.LookUp lookUp, int capacity, NovaManager memoryManager) {
         Slice s = lookUp.valueSlice;
         putInt(s, getLockLocation(), MOVED.value);
-        memoryManager.releaseSlice(s);
-        s = memoryManager.allocateSlice(capacity + getHeaderSize());
+        memoryManager.releaseSlice(s, false);
+        s = memoryManager.allocateSlice(capacity + getHeaderSize(), false);
         putInt(s, getLockLocation(), LOCKED.value);
         int valueBlockAndLength =
                 (s.getBlockID() << VALUE_BLOCK_SHIFT) | ((capacity + getHeaderSize()) & VALUE_LENGTH_MASK);
@@ -126,8 +126,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
             }
             // read the old value (the slice is not reclaimed yet)
             V v = transformer != null ? transformer.apply(getValueByteBufferNoHeader(s).asReadOnlyBuffer()) : null;
-            memoryManager.releaseSlice(s);
-            memoryManager.valuesAllocated.decrementAndGet();
+            memoryManager.releaseSlice(s, false);
             return new AbstractMap.SimpleEntry<>(TRUE, v);
         } else {
             // We first have to read the oldValue and only then decide whether it should be deleted.
@@ -142,7 +141,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
             }
             // value is now deleted
             putInt(s, getLockLocation(), DELETED.value);
-            memoryManager.releaseSlice(s);
+            memoryManager.releaseSlice(s, false);
             return new AbstractMap.SimpleEntry<>(TRUE, v);
         }
     }

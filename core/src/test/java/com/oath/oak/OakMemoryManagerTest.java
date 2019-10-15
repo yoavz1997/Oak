@@ -18,29 +18,13 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.*;
 
 public class OakMemoryManagerTest {
-    private OakBlockMemoryAllocator valuesMemoryAllocator;
     private OakBlockMemoryAllocator keysMemoryAllocator;
 
     private MemoryManager memoryManager;
-    private long allocatedBytes;
 
     @Before
     public void setUp() {
-        allocatedBytes = 0;
-        valuesMemoryAllocator = mock(OakBlockMemoryAllocator.class);
         keysMemoryAllocator = new OakNativeMemoryAllocator(128);
-        when(valuesMemoryAllocator.allocateSlice(anyInt())).thenAnswer((Answer) invocation -> {
-            int size = (int) invocation.getArguments()[0];
-            allocatedBytes += size;
-            return ByteBuffer.allocate(size);
-
-        });
-        doAnswer(invocation -> {
-            ByteBuffer bb = (ByteBuffer) invocation.getArguments()[0];
-            allocatedBytes -= bb.capacity();
-            return allocatedBytes;
-        }).when(valuesMemoryAllocator).freeSlice(any());
-        when(valuesMemoryAllocator.allocated()).thenAnswer((Answer) invocationOnMock -> allocatedBytes);
         memoryManager = new MemoryManager(keysMemoryAllocator);
     }
 

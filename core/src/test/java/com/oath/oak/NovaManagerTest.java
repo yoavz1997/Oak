@@ -13,16 +13,16 @@ public class NovaManagerTest {
         long oldVersion = novaManager.getCurrentVersion();
         Slice[] allocatedSlices = new Slice[NovaManager.RELEASE_LIST_LIMIT];
         for (int i = 0; i < NovaManager.RELEASE_LIST_LIMIT; i++) {
-            allocatedSlices[i] = novaManager.allocateSlice(i + 5).duplicate();
+            allocatedSlices[i] = novaManager.allocateSlice(i + 5, false).duplicate();
         }
         for (int i = 0; i < NovaManager.RELEASE_LIST_LIMIT; i++) {
             assertEquals(i + 5, allocatedSlices[i].getByteBuffer().remaining());
-            novaManager.releaseSlice(allocatedSlices[i]);
+            novaManager.releaseSlice(allocatedSlices[i], false);
         }
         long newVersion = novaManager.getCurrentVersion();
         assertEquals(oldVersion + 1, newVersion);
         for (int i = NovaManager.RELEASE_LIST_LIMIT - 1; i > -1; i--) {
-            Slice s = novaManager.allocateSlice(i + 5);
+            Slice s = novaManager.allocateSlice(i + 5, false);
             assertEquals(allocatedSlices[i].getBlockID(), s.getBlockID());
             assertEquals(allocatedSlices[i].getByteBuffer().position(), s.getByteBuffer().position());
             assertEquals(allocatedSlices[i].getByteBuffer().limit(), s.getByteBuffer().limit());
