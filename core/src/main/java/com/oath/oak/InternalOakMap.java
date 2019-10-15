@@ -372,6 +372,7 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
+                    c.releaseKey(ei);
                     if (c.getValueReference(prevEi) != INVALID_VALUE) {
                         continue;
                     }
@@ -450,6 +451,7 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
+                    c.releaseKey(ei);
                     // some other thread linked its entry with the same key.
                     int[] otherVersion = new int[1];
                     Slice otherSlice = c.buildValueSlice(c.getValueReferenceAndVersion(prevEi, otherVersion));
@@ -535,6 +537,7 @@ class InternalOakMap<K, V> {
                 }
                 int prevEi = c.linkEntry(ei, key);
                 if (prevEi != ei) {
+                    c.releaseKey(ei);
                     if (c.getValueReference(prevEi) != INVALID_VALUE) {
                         continue;
                     } else {
