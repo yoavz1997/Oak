@@ -180,12 +180,15 @@ public class Test {
         printHeapStats("After");
         System.out.println("Initialization complete. ");
 
-        Thread.sleep(5000);
+//        Thread.sleep(5000);
         startTime = System.currentTimeMillis();
         for (Thread thread : threads)
             thread.start();
         try {
-            Thread.sleep(milliseconds);
+            for (int i = 0; i < 30; i++) {
+                Thread.sleep(milliseconds);
+                printHeapStats("Sample " + i);
+            }
         } finally {
             switch (benchType) {
                 case OAKMAP:
