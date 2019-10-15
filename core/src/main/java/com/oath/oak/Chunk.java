@@ -212,7 +212,7 @@ public class Chunk<K, V> {
      * write key in slice
      **/
     private void writeKey(K key, int ei) {
-        int keySize = keySerializer.calculateSize(key);
+        int keySize = keySerializer.calculateSize(key) + operator.getHeaderSize();
         Slice s = memoryManager.allocateSlice(keySize);
         // byteBuffer.slice() is set so it protects us from the overwrites of the serializer
         keySerializer.serialize(key, s.getByteBuffer().slice());

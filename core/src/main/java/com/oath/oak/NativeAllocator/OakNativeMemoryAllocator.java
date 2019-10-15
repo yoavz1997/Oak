@@ -187,6 +187,10 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
         return allocated.get();
     }
 
+    public int getFreeListLength(){
+        return freeList.size();
+    }
+
 
     @Override public boolean isClosed() {
     return closed.get();

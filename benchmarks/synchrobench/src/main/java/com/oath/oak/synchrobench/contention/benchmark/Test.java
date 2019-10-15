@@ -163,6 +163,7 @@ public class Test {
         System.out.println("\n" + message);
         System.out.println((float) (heapSize - heapFreeSize) / (1024 * 1024));
         System.out.println((float) (((OakMap) oakBench).getMemoryAllocator().allocated()) / (1024 * 1024));
+        System.out.println((float) (((OakMap) oakBench).getMemoryAllocator().getFreeListLength()) / (1024 * 1024));
     }
 
     /**
