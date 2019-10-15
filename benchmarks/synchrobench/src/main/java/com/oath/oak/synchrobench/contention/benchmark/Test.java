@@ -188,6 +188,8 @@ public class Test {
             for (int i = 0; i < 30; i++) {
                 Thread.sleep(milliseconds);
                 printHeapStats("Sample " + i);
+                System.out.println("Number of Removes " + threadLoopsOak[0].numRemove);
+                System.out.println("Number of Puts " + threadLoopsOak[0].numAdd);
             }
         } finally {
             switch (benchType) {
