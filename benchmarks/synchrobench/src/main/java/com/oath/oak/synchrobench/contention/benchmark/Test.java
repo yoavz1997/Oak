@@ -24,70 +24,44 @@ public class Test {
         OAKMAP
     }
 
-    /**
-     * The array of threads executing the benchmark
-     */
-    private Thread[] threads;
-    /**
-     * The array of runnable thread codes
-     */
-    private ThreadLoopOak[] threadLoopsOak;
-    /**
-     * The observed duration of the benchmark
-     */
-    private double elapsedTime;
-    /**
-     * The throughput
-     */
-    private double[] throughput = null;
-    /**
-     * Element count
-     */
+	/** The array of threads executing the benchmark */
+	private Thread[] threads;
+	/** The array of runnable thread codes */
+	private ThreadLoopOak[] threadLoopsOak;
+	/** The observed duration of the benchmark */
+	private double elapsedTime;
+	/** The throughput */
+	private double[] throughput = null;
+	/** Element count */
     private int[] totalSize = null;
-    /**
-     * The iteration
-     */
-    private int currentIteration = 0;
+	/** The iteration */
+	private int currentIteration = 0;
 
-    /**
-     * The total number of operations for all threads
-     */
-    private long total = 0;
-    /**
-     * The total number of successful operations for all threads
-     */
-    private long numAdd = 0;
-    private long numRemove = 0;
-    private long numAddAll = 0;
-    private long numRemoveAll = 0;
-    private long numSize = 0;
-    private long numContains = 0;
-    /**
-     * The total number of failed operations for all threads
-     */
-    private long failures = 0;
-    /**
-     * The total number of aborts
-     */
-    private long aborts = 0;
-    /**
-     * The instance of the benchmark
-     */
-    private Type benchType = null;
-    private CompositionalOakMap<MyBuffer, MyBuffer> oakBench = null;
-    /** The instance of the benchmark */
-    /**
-     * The benchmark methods
-     */
-    private Method[] methods;
+	/** The total number of operations for all threads */
+	private long total = 0;
+	/** The total number of successful operations for all threads */
+	private long numAdd = 0;
+	private long numRemove = 0;
+	private long numAddAll = 0;
+	private long numRemoveAll = 0;
+	private long numSize = 0;
+	private long numContains = 0;
+	/** The total number of failed operations for all threads */
+	private long failures = 0;
+	/** The total number of aborts */
+	private long aborts = 0;
+	/** The instance of the benchmark */
+	private Type benchType = null;
+	private CompositionalOakMap<MyBuffer, MyBuffer> oakBench = null;
+	/** The instance of the benchmark */
+	/** The benchmark methods */
+	private Method[] methods;
 
     private long nodesTraversed;
     public long structMods;
     private long getCount;
 
-    /**
-     * The thread-private PRNG
-     */
+    /** The thread-private PRNG */
     final private static ThreadLocal<Random> s_random = new ThreadLocal<Random>() {
         @Override
         protected synchronized Random initialValue() {
@@ -189,6 +163,7 @@ public class Test {
         System.out.println("\n" + message);
         System.out.println((float) (heapSize - heapFreeSize) / (1024 * 1024));
         System.out.println((float) (((OakMap) oakBench).getMemoryAllocator().allocated()) / (1024 * 1024));
+        System.out.println((float) (((OakMap) oakBench).getMemoryAllocator().getFreeListLength()) / (1024 * 1024));
     }
 
     /**
@@ -206,12 +181,17 @@ public class Test {
         printHeapStats("After");
         System.out.println("Initialization complete. ");
 
-        Thread.sleep(5000);
+//        Thread.sleep(5000);
         startTime = System.currentTimeMillis();
         for (Thread thread : threads)
             thread.start();
         try {
-            Thread.sleep(milliseconds);
+            for (int i = 0; i < 30; i++) {
+                Thread.sleep(milliseconds);
+                printHeapStats("Sample " + i);
+                System.out.println("Number of Removes " + threadLoopsOak[0].numRemove);
+                System.out.println("Number of Puts " + threadLoopsOak[0].numAdd);
+            }
         } finally {
             switch (benchType) {
                 case OAKMAP:

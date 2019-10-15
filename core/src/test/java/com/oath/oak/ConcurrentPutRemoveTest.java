@@ -11,6 +11,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
@@ -57,10 +58,11 @@ public class ConcurrentPutRemoveTest {
                 int key = r.nextInt(NUM_OF_ENTRIES);
                 int op = r.nextInt(2);
 
-                if (op == 0)
+                if (op == 0) {
                     puts[key] += (oak.putIfAbsent(key, id) == null) ? 1 : 0;
-                else
+                } else {
                     removes[key] += (oak.remove(key) != null) ? 1 : 0;
+                }
             }
             for (int i = 0; i < NUM_OF_ENTRIES; i++) {
                 status[i].addAndGet(puts[i]);
@@ -87,10 +89,11 @@ public class ConcurrentPutRemoveTest {
         for (int i = 0; i < NUM_OF_ENTRIES; i++) {
             int old = status[i].get();
             assert old == 0 || old == 1;
-            if (old == 0)
+            if (old == 0) {
                 assertNull(oak.get(i));
-            else
+            } else {
                 assertNotNull(oak.get(i));
+            }
         }
 
         for (int i = 0; i < NUM_THREADS; i++) {
@@ -111,16 +114,21 @@ public class ConcurrentPutRemoveTest {
             threads.get(i).join();
         }
 
+        int shouldBeSize = 0;
         for (int i = 0; i < NUM_OF_ENTRIES; i++) {
             int old = status[i].get();
+            shouldBeSize += old;
             assert old == 0 || old == 1;
             if (old == 0) {
-                if (oak.get(i) != null)
+                if (oak.get(i) != null) {
                     assertNull(oak.get(i));
+                }
             } else {
-                if (oak.get(i) == null)
+                if (oak.get(i) == null) {
                     assertNotNull(oak.get(i));
+                }
             }
         }
+        assertEquals(shouldBeSize, oak.size());
     }
 }
