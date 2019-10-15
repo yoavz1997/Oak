@@ -29,14 +29,14 @@ public class OakRReference implements OakRBuffer {
     private int blockID = OakNativeMemoryAllocator.INVALID_BLOCK_ID;
     private int position = -1;
     private int length = -1;
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     private final int headerSize;
 
     // The OakRKeyReferBufferImpl user accesses OakRKeyReferBufferImpl
     // as it would be a ByteBuffer with initially zero position.
     // We translate it to the relevant ByteBuffer position, by adding keyPosition to any given index
 
-    OakRReference(NovaAllocator memoryManager, int headerSize) {
+    OakRReference(NovaManager memoryManager, int headerSize) {
         this.memoryManager = memoryManager;
         this.headerSize = headerSize;
     }

@@ -14,14 +14,14 @@ import static com.oath.oak.NovaValueUtils.Result.*;
 import static org.junit.Assert.*;
 
 public class NovaValueOperationsTest {
-    private NovaAllocator novaAllocator;
+    private NovaManager novaManager;
     private Slice s;
     private final NovaValueOperations operator = new NovaValueOperationsImpl();
 
     @Before
     public void init() {
-        novaAllocator = new NovaAllocator(new OakNativeMemoryAllocator(128));
-        s = novaAllocator.allocateSlice(20);
+        novaManager = new NovaManager(new OakNativeMemoryAllocator(128));
+        s = novaManager.allocateSlice(20);
         putInt(0, 1);
         putInt(operator.getLockLocation(), 0);
     }
@@ -155,7 +155,7 @@ public class NovaValueOperationsTest {
             public int calculateSize(Integer object) {
                 return 0;
             }
-        }, novaAllocator));
+        }, novaManager));
         assertEquals(randomValues[0], getInt(8));
         assertEquals(randomValues[1], getInt(12));
         assertEquals(randomValues[2], getInt(16));
@@ -179,7 +179,7 @@ public class NovaValueOperationsTest {
             public int calculateSize(Integer object) {
                 return 0;
             }
-        }, novaAllocator);
+        }, novaManager);
     }
 
     @Test(expected = IndexOutOfBoundsException.class)
@@ -200,7 +200,7 @@ public class NovaValueOperationsTest {
             public int calculateSize(Integer object) {
                 return 0;
             }
-        }, novaAllocator);
+        }, novaManager);
     }
 
     @Test
@@ -235,7 +235,7 @@ public class NovaValueOperationsTest {
                 public int calculateSize(Integer object) {
                     return 0;
                 }
-            }, novaAllocator);
+            }, novaManager);
         });
         operator.lockRead(s, 1);
         putter.start();
@@ -288,7 +288,7 @@ public class NovaValueOperationsTest {
                 public int calculateSize(Integer object) {
                     return 0;
                 }
-            }, novaAllocator);
+            }, novaManager);
         });
         operator.lockWrite(s, 1);
         putter.start();
@@ -309,13 +309,13 @@ public class NovaValueOperationsTest {
     public void cannotPutInDeletedValueTest() {
         operator.deleteValue(s, 1);
         Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 1);
-        assertEquals(FALSE, operator.put(null, lookUp, null, null, novaAllocator));
+        assertEquals(FALSE, operator.put(null, lookUp, null, null, novaManager));
     }
 
     @Test
     public void cannotPutToValueOfDifferentVersionTest() {
         Chunk.LookUp lookUp = new Chunk.LookUp(s, 0, 0, 2);
-        assertEquals(RETRY, operator.put(null, lookUp, null, null, novaAllocator));
+        assertEquals(RETRY, operator.put(null, lookUp, null, null, novaManager));
     }
 
     @Test

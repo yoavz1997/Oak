@@ -22,7 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import static com.oath.oak.Chunk.*;
-import static com.oath.oak.NovaAllocator.INVALID_VERSION;
+import static com.oath.oak.NovaManager.INVALID_VERSION;
 import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.UnsafeUtils.longToInts;
 
@@ -34,7 +34,7 @@ class InternalOakMap<K, V> {
     private final AtomicReference<Chunk<K, V>> head;
     private final ByteBuffer minKey;
     private final OakComparator<K> comparator;
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     private final AtomicInteger size;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
@@ -51,7 +51,7 @@ class InternalOakMap<K, V> {
 
     InternalOakMap(K minKey, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
                    OakComparator<K> oakComparator,
-                   NovaAllocator memoryManager, int chunkMaxItems, NovaValueOperations operator) {
+                   NovaManager memoryManager, int chunkMaxItems, NovaValueOperations operator) {
 
         this.size = new AtomicInteger(0);
         this.memoryManager = memoryManager;

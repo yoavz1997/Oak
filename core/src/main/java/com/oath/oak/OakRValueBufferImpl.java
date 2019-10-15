@@ -22,11 +22,11 @@ public class OakRValueBufferImpl implements OakRBuffer {
     private final long keyReference;
     private int version;
     private final NovaValueOperations operator;
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     private final InternalOakMap<?, ?> internalOakMap;
 
     OakRValueBufferImpl(long valueReference, int valueVersion, long keyReference, NovaValueOperations operator,
-                        NovaAllocator memoryManager, InternalOakMap<?, ?> internalOakMap) {
+                        NovaManager memoryManager, InternalOakMap<?, ?> internalOakMap) {
         this.valueReference = valueReference;
         this.keyReference = keyReference;
         this.version = valueVersion;

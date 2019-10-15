@@ -12,17 +12,17 @@ public interface NovaValueOperations extends NovaValueUtils {
     <T> AbstractMap.SimpleEntry<Result, T> transform(Slice s, Function<ByteBuffer, T> transformer, int version);
 
     <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer,
-                      NovaAllocator memoryManager);
+                      NovaManager memoryManager);
 
     Result compute(Slice s, Consumer<OakWBuffer> computer, int version);
 
-    <V> AbstractMap.SimpleEntry<Result, V> remove(Slice s, NovaAllocator memoryManager, int version, V oldValue,
+    <V> AbstractMap.SimpleEntry<Result, V> remove(Slice s, NovaManager memoryManager, int version, V oldValue,
                                                   Function<ByteBuffer, V> transformer);
 
     <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value,
                                                        Function<ByteBuffer, V> valueDeserializeTransformer,
-                                                       OakSerializer<V> serializer, NovaAllocator memoryManager);
+                                                       OakSerializer<V> serializer, NovaManager memoryManager);
 
     <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value, Function<ByteBuffer,
-            V> valueDeserializeTransformer, OakSerializer<V> serializer, NovaAllocator memoryManager);
+            V> valueDeserializeTransformer, OakSerializer<V> serializer, NovaManager memoryManager);
 }

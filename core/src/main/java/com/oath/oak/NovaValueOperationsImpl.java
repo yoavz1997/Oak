@@ -10,8 +10,8 @@ import java.util.function.Function;
 
 import static com.oath.oak.Chunk.VALUE_BLOCK_SHIFT;
 import static com.oath.oak.Chunk.VALUE_LENGTH_MASK;
-import static com.oath.oak.NovaAllocator.INVALID_VERSION;
-import static com.oath.oak.NovaAllocator.NOVA_HEADER_SIZE;
+import static com.oath.oak.NovaManager.INVALID_VERSION;
+import static com.oath.oak.NovaManager.NOVA_HEADER_SIZE;
 import static com.oath.oak.NovaValueOperationsImpl.LockStates.DELETED;
 import static com.oath.oak.NovaValueOperationsImpl.LockStates.FREE;
 import static com.oath.oak.NovaValueOperationsImpl.LockStates.LOCKED;
@@ -67,7 +67,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
 
     @Override
     public <K, V> Result put(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer,
-                             NovaAllocator memoryManager) {
+                             NovaManager memoryManager) {
         Result result = lockWrite(lookUp.valueSlice, lookUp.version);
         if (result != TRUE) {
             return result;
@@ -78,7 +78,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     private <K, V> Slice innerPut(Chunk<K, V> chunk, Chunk.LookUp lookUp, V newVal, OakSerializer<V> serializer,
-                                  NovaAllocator memoryManager) {
+                                  NovaManager memoryManager) {
         Slice s = lookUp.valueSlice;
         int capacity = serializer.calculateSize(newVal);
         if (capacity + getHeaderSize() > s.getByteBuffer().remaining()) {
@@ -89,7 +89,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
         return s;
     }
 
-    private <K, V> Slice moveValue(Chunk<K, V> chunk, Chunk.LookUp lookUp, int capacity, NovaAllocator memoryManager) {
+    private <K, V> Slice moveValue(Chunk<K, V> chunk, Chunk.LookUp lookUp, int capacity, NovaManager memoryManager) {
         Slice s = lookUp.valueSlice;
         putInt(s, getLockLocation(), MOVED.value);
         memoryManager.releaseSlice(s);
@@ -115,7 +115,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     }
 
     @Override
-    public <V> AbstractMap.SimpleEntry<Result, V> remove(Slice s, NovaAllocator memoryManager, int version, V oldValue,
+    public <V> AbstractMap.SimpleEntry<Result, V> remove(Slice s, NovaManager memoryManager, int version, V oldValue,
                                                          Function<ByteBuffer, V> transformer) {
         // No need to check the old value
         if (oldValue == null) {
@@ -127,6 +127,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
             // read the old value (the slice is not reclaimed yet)
             V v = transformer != null ? transformer.apply(getValueByteBufferNoHeader(s).asReadOnlyBuffer()) : null;
             memoryManager.releaseSlice(s);
+            memoryManager.valuesAllocated.decrementAndGet();
             return new AbstractMap.SimpleEntry<>(TRUE, v);
         } else {
             // We first have to read the oldValue and only then decide whether it should be deleted.
@@ -150,7 +151,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     public <K, V> AbstractMap.SimpleEntry<Result, V> exchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V value,
                                                               Function<ByteBuffer, V> valueDeserializeTransformer,
                                                               OakSerializer<V> serializer,
-                                                              NovaAllocator memoryManager) {
+                                                              NovaManager memoryManager) {
         Result result = lockWrite(lookUp.valueSlice, lookUp.version);
         if (result != TRUE) {
             return new AbstractMap.SimpleEntry<>(result, null);
@@ -167,7 +168,7 @@ public class NovaValueOperationsImpl implements NovaValueOperations {
     @Override
     public <K, V> Result compareExchange(Chunk<K, V> chunk, Chunk.LookUp lookUp, V expected, V value,
                                          Function<ByteBuffer, V> valueDeserializeTransformer,
-                                         OakSerializer<V> serializer, NovaAllocator memoryManager) {
+                                         OakSerializer<V> serializer, NovaManager memoryManager) {
         Result result = lockWrite(lookUp.valueSlice, lookUp.version);
         if (result != TRUE) {
             return result;

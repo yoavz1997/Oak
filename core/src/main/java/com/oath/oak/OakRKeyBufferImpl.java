@@ -17,10 +17,10 @@ import static com.oath.oak.UnsafeUtils.longToInts;
 public class OakRKeyBufferImpl implements OakRBuffer {
 
     private final long keyReference;
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     private final int initialPosition;
 
-    OakRKeyBufferImpl(long keyReference, NovaAllocator memoryManager) {
+    OakRKeyBufferImpl(long keyReference, NovaManager memoryManager) {
         this.keyReference = keyReference;
         this.memoryManager = memoryManager;
         this.initialPosition = longToInts(keyReference)[1];

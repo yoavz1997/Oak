@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class NovaAllocator implements Closeable {
+public class NovaManager implements Closeable {
     static final int RELEASE_LIST_LIMIT = 1024;
     static final int NOVA_HEADER_SIZE = 4;
     static final int INVALID_VERSION = 0;
@@ -15,8 +15,10 @@ public class NovaAllocator implements Closeable {
     private List<List<Slice>> releaseLists;
     private AtomicInteger globalNovaNumber;
     private OakBlockMemoryAllocator manager;
+    public final AtomicInteger keysAllocated = new AtomicInteger(0);
+    public final AtomicInteger valuesAllocated = new AtomicInteger(0);
 
-    NovaAllocator(OakBlockMemoryAllocator manager) {
+    NovaManager(OakBlockMemoryAllocator manager) {
         this.threadIndexCalculator = ThreadIndexCalculator.newInstance();
         this.releaseLists = new CopyOnWriteArrayList<>();
         for (int i = 0; i < ThreadIndexCalculator.MAX_THREADS; i++) {

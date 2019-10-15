@@ -37,7 +37,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
      * For any externally used Oak class (OakMap, Iterator, OakBuffer- or OakTransform- View),
      * this specific class is responsible to wrap the internal methods with attach-detach.
      * */
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     private final Function<ByteBuffer, K> keyDeserializeTransformer;
     private final Function<ByteBuffer, V> valueDeserializeTransformer;
     private final Function<Map.Entry<ByteBuffer, ByteBuffer>, Map.Entry<K, V>> entryDeserializeTransformer;
@@ -52,7 +52,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
 
     // internal constructor, to create OakMap use OakMapBuilder
     OakMap(K minKey, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer, OakComparator<K> oakComparator,
-           int chunkMaxItems, NovaAllocator mm, NovaValueOperations operator) {
+           int chunkMaxItems, NovaManager mm, NovaValueOperations operator) {
 
         this.memoryManager = mm;
         this.comparator = oakComparator;
@@ -72,7 +72,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
     }
 
     // set constructor, mostly used for subMap
-    private OakMap(InternalOakMap<K, V> internalOakMap, NovaAllocator memoryManager,
+    private OakMap(InternalOakMap<K, V> internalOakMap, NovaManager memoryManager,
                    Function<ByteBuffer, K> keyDeserializeTransformer,
                    Function<ByteBuffer, V> valueDeserializeTransformer,
                    Function<Map.Entry<ByteBuffer, ByteBuffer>, Map.Entry<K, V>> entryDeserializeTransformer,
@@ -496,7 +496,7 @@ public class OakMap<K, V> extends AbstractMap<K, V> implements AutoCloseable, Co
         return new OakZeroCopyMap<>(this);
     }
 
-    public NovaAllocator getMemoryManager() {
+    public NovaManager getMemoryManager() {
         return memoryManager;
     }
 

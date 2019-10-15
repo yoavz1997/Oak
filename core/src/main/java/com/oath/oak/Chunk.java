@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicMarkableReference;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static com.oath.oak.NovaAllocator.INVALID_VERSION;
+import static com.oath.oak.NovaManager.INVALID_VERSION;
 import static com.oath.oak.NovaValueUtils.Result.*;
 import static com.oath.oak.NativeAllocator.OakNativeMemoryAllocator.INVALID_BLOCK_ID;
 import static com.oath.oak.UnsafeUtils.intsToLong;
@@ -108,7 +108,7 @@ public class Chunk<K, V> {
     public static final int MAX_ITEMS_DEFAULT = 4096;
 
     private static final Unsafe unsafe = UnsafeUtils.unsafe;
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     ByteBuffer minKey;       // minimal key that can be put in this chunk
     AtomicMarkableReference<Chunk<K, V>> next;
     OakComparator<K> comparator;
@@ -140,7 +140,7 @@ public class Chunk<K, V> {
      * @param minKey  minimal key to be placed in chunk
      * @param creator the chunk that is responsible for this chunk creation
      */
-    Chunk(ByteBuffer minKey, Chunk<K, V> creator, OakComparator<K> comparator, NovaAllocator memoryManager,
+    Chunk(ByteBuffer minKey, Chunk<K, V> creator, OakComparator<K> comparator, NovaManager memoryManager,
           int maxItems, AtomicInteger externalSize, OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer,
           NovaValueOperations operator) {
         this.memoryManager = memoryManager;
@@ -214,6 +214,7 @@ public class Chunk<K, V> {
     private void writeKey(K key, int ei) {
         int keySize = keySerializer.calculateSize(key);
         Slice s = memoryManager.allocateSlice(keySize);
+        memoryManager.keysAllocated.incrementAndGet();
         // byteBuffer.slice() is set so it protects us from the overwrites of the serializer
         keySerializer.serialize(key, s.getByteBuffer().slice());
 
@@ -288,6 +289,7 @@ public class Chunk<K, V> {
         Slice s = new Slice(blockID, keyPosition, length, memoryManager);
 
         memoryManager.releaseSlice(s);
+        memoryManager.keysAllocated.decrementAndGet();
     }
 
     ByteBuffer readMinKey() {
@@ -465,8 +467,10 @@ public class Chunk<K, V> {
         return getEntryFieldLong(entryIndex, OFFSET.KEY_REFERENCE);
     }
 
+    // Use this function to release an unreachable value reference
     void releaseValue(long newValueReference) {
         memoryManager.releaseSlice(buildValueSlice(newValueReference));
+        memoryManager.valuesAllocated.decrementAndGet();
     }
 
     /**
@@ -699,6 +703,7 @@ public class Chunk<K, V> {
         // the length of the given value plus its header
         int valueLength = valueSerializer.calculateSize(value) + operator.getHeaderSize();
         Slice slice = memoryManager.allocateSlice(valueLength);
+        memoryManager.valuesAllocated.incrementAndGet();
         version[0] = slice.getByteBuffer().getInt(slice.getByteBuffer().position());
         // initializing the header lock to be free
         slice.initHeader(operator);

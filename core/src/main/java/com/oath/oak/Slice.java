@@ -22,7 +22,7 @@ public class Slice {
         this.buffer = buffer;
     }
 
-    public Slice(int blockID, int position, int length, NovaAllocator memoryManager) {
+    public Slice(int blockID, int position, int length, NovaManager memoryManager) {
         this(blockID, memoryManager.getByteBufferFromBlockID(blockID, position, length).duplicate());
     }
 

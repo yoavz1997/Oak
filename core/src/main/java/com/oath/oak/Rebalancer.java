@@ -35,14 +35,14 @@ class Rebalancer<K, V> {
     private int chunksInRange;
     private int itemsInRange;
     private final boolean offHeap;
-    private final NovaAllocator memoryManager;
+    private final NovaManager memoryManager;
     private final OakSerializer<K> keySerializer;
     private final OakSerializer<V> valueSerializer;
     private final NovaValueOperations operator;
 
     /*-------------- Constructors --------------*/
 
-    Rebalancer(Chunk<K, V> chunk, boolean offHeap, NovaAllocator memoryManager,
+    Rebalancer(Chunk<K, V> chunk, boolean offHeap, NovaManager memoryManager,
                OakSerializer<K> keySerializer, OakSerializer<V> valueSerializer, NovaValueOperations operator) {
         this.entriesLowThreshold = (int) (chunk.getMaxItems() * LOW_THRESHOLD);
         this.maxRangeToAppend = (int) (chunk.getMaxItems() * APPEND_THRESHOLD);

@@ -162,8 +162,11 @@ public class Test {
 
         System.out.println("\n" + message);
         System.out.println((float) (heapSize - heapFreeSize) / (1024 * 1024));
-        System.out.println((float) (((OakMap) oakBench).getMemoryAllocator().allocated()) / (1024 * 1024));
-        System.out.println((float) (((OakMap) oakBench).getMemoryAllocator().getFreeListLength()) / (1024 * 1024));
+        final OakMap oakMap = ((OakMap) oakBench);
+        System.out.println((float) (oakMap.getMemoryAllocator().allocated()) / (1024 * 1024));
+        System.out.println("Free List Length " + oakMap.getMemoryAllocator().getFreeListLength());
+        System.out.println("Keys " + oakMap.getMemoryManager().keysAllocated.get());
+        System.out.println("Values " + oakMap.getMemoryManager().valuesAllocated.get());
     }
 
     /**
@@ -188,7 +191,7 @@ public class Test {
         try {
             for (int i = 0; i < 30; i++) {
                 Thread.sleep(milliseconds);
-                printHeapStats("Sample " + i);
+                printHeapStats("Sample " + (i + 1));
                 System.out.println("Number of Removes " + threadLoopsOak[0].numRemove);
                 System.out.println("Number of Puts " + threadLoopsOak[0].numAdd);
             }
