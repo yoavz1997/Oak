@@ -10,6 +10,7 @@ import com.oath.oak.synchrobench.maps.OakMap;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.Formatter;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Random;
 
@@ -54,9 +55,9 @@ public class Test {
 	/** The instance of the benchmark */
 	private Type benchType = null;
 	private CompositionalOakMap<MyBuffer, MyBuffer> oakBench = null;
-	/** The instance of the benchmark */
 	/** The benchmark methods */
 	private Method[] methods;
+	static HashSet<Integer> keySet = new HashSet<>();
 
     private long nodesTraversed;
     public long structMods;
@@ -81,6 +82,7 @@ public class Test {
                     MyBuffer val = new MyBuffer(Parameters.valSize);
                     val.buffer.putInt(0, v);
                     if (oakBench.putIfAbsentOak(key, val)) {
+                        keySet.add(v);
                         i--;
                     }
                     operations++;

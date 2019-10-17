@@ -1,5 +1,7 @@
 package com.oath.oak;
 
+import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
+
 import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -14,25 +16,29 @@ public class NovaManager implements Closeable {
     private ThreadIndexCalculator threadIndexCalculator;
     private List<List<Slice>> releaseLists;
     private AtomicInteger globalNovaNumber;
-    private OakBlockMemoryAllocator manager;
+    private OakNativeMemoryAllocator allocator;
 
-    NovaManager(OakBlockMemoryAllocator manager) {
+    NovaManager(OakNativeMemoryAllocator allocator) {
         this.threadIndexCalculator = ThreadIndexCalculator.newInstance();
         this.releaseLists = new CopyOnWriteArrayList<>();
         for (int i = 0; i < ThreadIndexCalculator.MAX_THREADS; i++) {
             this.releaseLists.add(new ArrayList<>(RELEASE_LIST_LIMIT));
         }
         globalNovaNumber = new AtomicInteger(1);
-        this.manager = manager;
+        this.allocator = allocator;
+    }
+
+    public OakNativeMemoryAllocator getAllocator(){
+        return allocator;
     }
 
     @Override
     public void close() {
-        manager.close();
+        allocator.close();
     }
 
     boolean isClosed() {
-        return manager.isClosed();
+        return allocator.isClosed();
     }
 
     int getCurrentVersion() {
@@ -40,24 +46,24 @@ public class NovaManager implements Closeable {
     }
 
     public long allocated() {
-        return manager.allocated();
+        return allocator.allocated();
     }
 
     Slice allocateSlice(int size, boolean isKey) {
-        Slice s = manager.allocateSlice(size, isKey);
+        Slice s = allocator.allocateSlice(size, isKey);
         assert s.getByteBuffer().remaining() >= size;
         s.getByteBuffer().putInt(s.getByteBuffer().position(), getCurrentVersion());
         return s;
     }
 
-    void releaseSlice(Slice s, boolean isKey) {
+    void releaseSlice(Slice s) {
         int idx = threadIndexCalculator.getIndex();
         List<Slice> myReleaseList = this.releaseLists.get(idx);
         myReleaseList.add(s.duplicate());
         if (myReleaseList.size() >= RELEASE_LIST_LIMIT) {
             globalNovaNumber.incrementAndGet();
             for (Slice releasedSlice : myReleaseList) {
-                manager.freeSlice(releasedSlice);
+                allocator.freeSlice(releasedSlice);
             }
             myReleaseList.clear();
         }
@@ -68,7 +74,7 @@ public class NovaManager implements Closeable {
     }
 
     ByteBuffer getByteBufferFromBlockID(Integer BlockID, int bufferPosition, int bufferLength) {
-        return manager.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength);
+        return allocator.readByteBufferFromBlockID(BlockID, bufferPosition, bufferLength);
     }
 
 }

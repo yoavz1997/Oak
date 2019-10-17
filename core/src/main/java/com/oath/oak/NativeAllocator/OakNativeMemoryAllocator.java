@@ -116,7 +116,7 @@ public class OakNativeMemoryAllocator implements OakBlockMemoryAllocator {
                 if (stats != null) {
                     stats.reclaim(size);
                 }
-                System.out.println("Reusing!");
+                allocated.addAndGet(size);
                 return bestFit.slice;
             }
         }

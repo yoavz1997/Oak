@@ -287,7 +287,7 @@ public class Chunk<K, V> {
         int length = keyArray[0] & KEY_LENGTH_MASK;
         Slice s = new Slice(blockID, keyPosition, length, memoryManager);
 
-        memoryManager.releaseSlice(s, true);
+        memoryManager.releaseSlice(s);
     }
 
     ByteBuffer readMinKey() {
@@ -467,7 +467,7 @@ public class Chunk<K, V> {
 
     // Use this function to release an unreachable value reference
     void releaseValue(long newValueReference) {
-        memoryManager.releaseSlice(buildValueSlice(newValueReference), false);
+        memoryManager.releaseSlice(buildValueSlice(newValueReference));
     }
 
     /**

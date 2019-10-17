@@ -9,7 +9,8 @@ public class NovaManagerTest {
 
     @Test
     public void reuseTest() {
-        NovaManager novaManager = new NovaManager(new OakNativeMemoryAllocator(128));
+        final OakNativeMemoryAllocator allocator = new OakNativeMemoryAllocator(128);
+        NovaManager novaManager = new NovaManager(allocator);
         long oldVersion = novaManager.getCurrentVersion();
         Slice[] allocatedSlices = new Slice[NovaManager.RELEASE_LIST_LIMIT];
         for (int i = 0; i < NovaManager.RELEASE_LIST_LIMIT; i++) {
@@ -17,8 +18,9 @@ public class NovaManagerTest {
         }
         for (int i = 0; i < NovaManager.RELEASE_LIST_LIMIT; i++) {
             assertEquals(i + 5, allocatedSlices[i].getByteBuffer().remaining());
-            novaManager.releaseSlice(allocatedSlices[i], false);
+            novaManager.releaseSlice(allocatedSlices[i]);
         }
+        assertEquals(NovaManager.RELEASE_LIST_LIMIT, allocator.getFreeListLength());
         long newVersion = novaManager.getCurrentVersion();
         assertEquals(oldVersion + 1, newVersion);
         for (int i = NovaManager.RELEASE_LIST_LIMIT - 1; i > -1; i--) {
