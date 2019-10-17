@@ -9,13 +9,10 @@ package com.oath.oak;
 import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.stubbing.Answer;
 
 import java.nio.ByteBuffer;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.*;
 
 public class OakMemoryManagerTest {
 
@@ -23,7 +20,7 @@ public class OakMemoryManagerTest {
 
     @Before
     public void setUp() {
-        OakMemoryAllocator keysMemoryAllocator = new OakNativeMemoryAllocator(128);
+        OakBlockMemoryAllocator keysMemoryAllocator = new OakNativeMemoryAllocator(128);
         memoryManager = new MemoryManager(keysMemoryAllocator);
     }
 
