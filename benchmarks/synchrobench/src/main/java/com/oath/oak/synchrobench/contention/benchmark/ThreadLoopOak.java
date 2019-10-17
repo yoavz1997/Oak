@@ -105,18 +105,7 @@ public class ThreadLoopOak implements Runnable {
             int coin = rand.nextInt(1000);
             if (coin < cdf[0]) { // -a
                 if (!change) {
-                    int prevLength = ((OakMap) bench).getMemoryAllocator().getFreeListLength();
-                    boolean wasThere = bench.getOak(key);
-                    if (wasThere != Test.keySet.contains(newInt)) {
-                        System.out.println(bench.getOak(key));
-                        throw new AssertionError();
-                    }
                     bench.removeOak(key);
-                    Test.keySet.remove(newInt);
-                    int currLength = ((OakMap) bench).getMemoryAllocator().getFreeListLength();
-                    if (!(wasThere ? currLength == prevLength + 1 : currLength == prevLength)) {
-                        throw new AssertionError();
-                    }
                     numRemove++;
                 } else {
                     if (bench.descendOak(key, size)) {
@@ -131,18 +120,7 @@ public class ThreadLoopOak implements Runnable {
                 newKey.buffer.putInt(0, newInt);
                 newVal.buffer.putInt(0, newInt);
                 if (!change) {
-                    int prevLength = ((OakMap) bench).getMemoryAllocator().getFreeListLength();
-                    boolean wasThere = bench.getOak(key);
-                    if (wasThere != Test.keySet.contains(newInt)) {
-                        System.out.println(bench.getOak(key));
-                        throw new AssertionError();
-                    }
                     bench.putOak(newKey, newVal);
-                    Test.keySet.add(newInt);
-                    int currLength = ((OakMap) bench).getMemoryAllocator().getFreeListLength();
-                    if (!(wasThere || prevLength == 0 ? currLength == prevLength : currLength == prevLength - 1)) {
-                        throw new AssertionError();
-                    }
                     numAdd++;
                 } else {
                     if (bench.putIfAbsentOak(newKey, newVal)) {
