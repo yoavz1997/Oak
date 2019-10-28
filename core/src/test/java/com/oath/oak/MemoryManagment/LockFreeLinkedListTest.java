@@ -1,26 +1,22 @@
 package com.oath.oak.MemoryManagment;
 
-import com.oath.oak.MemoryManagment.ExampleList.LinkedList;
+import com.oath.oak.MemoryManagment.ExampleList.LockFreeLinkedList;
 import com.oath.oak.NativeAllocator.OakNativeMemoryAllocator;
 import com.oath.oak.OakComparator;
 import com.oath.oak.OakSerializer;
-import com.oath.oak.ThreadIndexCalculator;
 import org.junit.Test;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Random;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 
-import static com.oath.oak.MemoryManagment.Result.TRUE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
-public class LinkedListTest {
+public class LockFreeLinkedListTest {
 
     private final OakSerializer<Integer> integerSerializer = new OakSerializer<Integer>() {
 
@@ -57,8 +53,8 @@ public class LinkedListTest {
         }
     };
 
-    private final LinkedList<Integer, Integer> myList =
-            new LinkedList<>(new NovaManagerImpl(new OakNativeMemoryAllocator(128),
+    private final LockFreeLinkedList<Integer, Integer> myList =
+            new LockFreeLinkedList<>(new NovaManagerImpl(new OakNativeMemoryAllocator(128),
                     new NovaValueUtilitiesImpl()), integerSerializer, Integer.MIN_VALUE, Integer.MAX_VALUE,
                     integerSerializer, integerComparator);
 

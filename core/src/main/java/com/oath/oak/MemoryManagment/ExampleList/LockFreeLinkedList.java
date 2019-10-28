@@ -18,7 +18,7 @@ import java.util.function.Function;
 
 import static com.oath.oak.MemoryManagment.Result.TRUE;
 
-public class LinkedList<K, V> {
+public class LockFreeLinkedList<K, V> {
 
     static class Node<K, V> {
         private OffHeapSlice key;
@@ -222,8 +222,8 @@ public class LinkedList<K, V> {
         }
     }
 
-    public LinkedList(NovaManager manager, OakSerializer<K> keySerializer, K minKey, K maxKey,
-                      OakSerializer<V> valueSerializer, OakComparator<K> keyComparator) {
+    public LockFreeLinkedList(NovaManager manager, OakSerializer<K> keySerializer, K minKey, K maxKey,
+                              OakSerializer<V> valueSerializer, OakComparator<K> keyComparator) {
         this.keySerializer = keySerializer;
         this.valueSerializer = valueSerializer;
         Node<K, V> max = new Node<>(maxKey, keySerializer, null, manager);
